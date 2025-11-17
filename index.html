@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  <script src="https://rawgit.com/donmccurdy/aframe-extras/v6.0.0/dist/aframe-extras.loaders.min.js"></script>
+  <style>body{margin:0;overflow:hidden}</style>
+
+  <script>
+    // ------------------ Webcam Bubble Component ------------------
+    AFRAME.registerComponent('webcam-bubble', {
+      schema: {
+        radius: { type: 'number', default: 0.4 }
+      },
+      init: function () {
+        const self = this;
+        function waitForVideo() {
+          const video = document.querySelector('video');
+          if (video && video.readyState >= 2) {
+            self.createBubble(video);
+          } else {
+            setTimeout(waitForVideo, 200);
+          }
+        }
+        waitForVideo();
+      },
+      createBubble: function (video) {
+        const THREE = window.THREE;
+        const texture = new THREE.VideoTexture(video);
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.format = THREE.RGBFormat;
+
+        const geom = new THREE.SphereGeometry(this.data.radius, 32, 32);
+        const mat = new THREE.MeshBasicMaterial({
+          map: texture,
+          transparent: true,
+          opacity: 0.7,
+          side: THREE.BackSide
+        });
+
+        const mesh = new THREE.Mesh(geom, mat);
+        this.el.setObject3D('mesh', mesh);
+      }
+    });
+
+    // ------------------ Bubble Fade Component ------------------
+    AFRAME.registerComponent('bubble-fade', {
+      schema: { from: {type: 'number', default: 0.07}, to: {type: 'number', default: 0}, dur: {type: 'number', default: 500}, delay: {type: 'number', default: 150} },
+      init() {
+        this.materials = [];
+        this.startTime = null;
+        this.isAnimating = false;
+        this.el.addEventListener('model-loaded', () => {
+          setTimeout(() => {
+            const obj = this.el.getObject3D('mesh');
+            if (!obj) return;
+            obj.traverse(n => { if (n.isMesh && n.material) this.materials.push(n.material); });
+          }, 100);
+        });
+        this.el.addEventListener('start-fade', () => {
+          setTimeout(() => { this.startTime = performance.now(); this.isAnimating = true; }, this.data.delay);
+        });
+      },
+      tick() {
+        if (!this.isAnimating || !this.startTime) return;
+        const elapsed = performance.now() - this.startTime;
+        const progress = Math.min(elapsed / this.data.dur, 1);
+        const newOpacity = this.data.from * (1 - progress) + this.data.to * progress;
+        this.materials.forEach(m => { m.opacity = newOpacity; m.needsUpdate = true; });
+        if (progress >= 1) this.isAnimating = false;
+      }
+    });
+
+    // ------------------ Force Phong Component ------------------
+    AFRAME.registerComponent('force-phong', {
+      schema:{shininess:{default:180}},
+      init(){
+        this.el.addEventListener('model-loaded',()=>{
+          const obj=this.el.getObject3D('mesh'); if(!obj) return;
+          const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256);
+          const envScene = new THREE.Scene();
+          const gradientGeo = new THREE.SphereGeometry(500, 32, 32);
+          const gradientMat = new THREE.ShaderMaterial({
+            side: THREE.BackSide,
+            vertexShader:`varying vec3 vWorldPosition;void main(){vec4 worldPosition=modelMatrix*vec4(position,1.0);vWorldPosition=worldPosition.xyz;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
+            fragmentShader:`varying vec3 vWorldPosition;vec3 hsv2rgb(vec3 c){vec4 K=vec4(1.0,2.0/3.0,1.0/3.0,3.0);vec3 p=abs(fract(c.xxx+K.xyz)*6.0-K.www);return c.z*mix(K.xxx,clamp(p-K.xxx,0.0,1.0),c.y);}void main(){float h=normalize(vWorldPosition).y;float angle=atan(vWorldPosition.z,vWorldPosition.x);float hue=(angle/6.28318530718)+0.5+h*0.3;vec3 rainbowColor=hsv2rgb(vec3(hue,1.0,1.8));gl_FragColor=vec4(rainbowColor,1.0);}`
+          });
+          envScene.add(new THREE.Mesh(gradientGeo, gradientMat));
+          obj.traverse(n=>{
+            if(!n.isMesh||!n.material) return;
+            const base=n.material;
+            const phong=new THREE.MeshPhongMaterial({
+              color:new THREE.Color(0x0A0A0A),emissive:new THREE.Color(0x040B2E),emissiveIntensity:0.15,specular:new THREE.Color(0xFFFFFF),
+              shininess:(typeof base.roughness==='number')?Math.max(1,(1-base.roughness)*256):this.data.shininess,transparent:!!base.transparent,
+              opacity:(typeof base.opacity==='number')?base.opacity:.07,side:THREE.DoubleSide,reflectivity:1.0,envMap:cubeRenderTarget.texture,combine:THREE.AddOperation
+            });
+            if(base.map) phong.map=base.map; if(base.normalMap) phong.normalMap=base.normalMap;
+            n.material=phong; n.material.needsUpdate=true;
+          });
+        });
+      }
+    });
+
+    // ------------------ Bubble Rise Component ------------------
+    AFRAME.registerComponent('bubble-rise', {
+      schema:{rise:{type:'number',default:0.07},ampXZ:{type:'vec2',default:{x:0.08,y:0.08}},speedXZ:{type:'vec2',default:{x:0.07,y:0.09}},tilt:{type:'vec3',default:{x:2,y:5,z:2}}},
+      init(){this._setBases=()=>{this.t0=performance.now()*0.001;this.basePos=this.el.object3D.position.clone();this.baseRot=this.el.getAttribute('rotation');};this._setBases();this._onReset=()=>this._setBases();this.el.addEventListener('drift-reset',this._onReset);},
+      remove(){this.el.removeEventListener('drift-reset',this._onReset);},
+      tick(){const t=performance.now()*0.001-this.t0;const{rise,ampXZ,speedXZ,tilt}=this.data;const ox=Math.sin(t*speedXZ.x*6.283)*ampXZ.x+Math.sin(t*0.23)*0.012;const oz=Math.cos(t*speedXZ.y*6.283)*ampXZ.y+Math.sin(t*0.19)*0.010;const y=this.basePos.y+rise*t;this.el.object3D.position.set(this.basePos.x+ox,y,this.basePos.z+oz);const rx=this.baseRot.x+Math.sin(t*0.22)*tilt.x;const ry=this.baseRot.y+Math.sin(t*0.17)*tilt.y;const rz=this.baseRot.z+Math.cos(t*0.19)*tilt.z;this.el.setAttribute('rotation',`${rx} ${ry} ${rz}`);}
+    });
+
+    // ------------------ Billboard Component ------------------
+    AFRAME.registerComponent('billboard', {
+      tick: function() {
+        const cam = this.el.sceneEl.camera;
+        if (cam) {
+          this.el.object3D.lookAt(cam.getWorldPosition(new THREE.Vector3()));
+        }
+      }
+    });
+
+    // ------------------ Main Scene Setup ------------------
+    window.addEventListener('DOMContentLoaded',()=>{
+      const scene=document.querySelector('a-scene');
+      
+      // Poem data - each bubble reveals a stanza
+      const poemData = [
+        {
+          text: "How do you know?\nIf the wind has taken you?",
+          position: {x: -0.5, y: -0.3, z: -1.2},
+          isCamera: false
+        },
+        {
+          text: "In the sea of sameness\nWhere you are reflected\nBut not challenged",
+          position: {x: 0.5, y: -0.4, z: -1.0},
+          isCamera: true  // This one is the camera bubble!
+        },
+        {
+          text: "So what if we burst\nAnd grow out of our comfort\nTo reach others that don't mirror us\nBut those who puzzle us",
+          position: {x: -0.3, y: -0.5, z: -0.9},
+          isCamera: false
+        },
+        {
+          text: "To put the pieces together\nTo construct a future\nWhere we add to each other\nInstead of subtract and divide",
+          position: {x: 0.3, y: -0.2, z: -1.1},
+          isCamera: false
+        }
+      ];
+
+      scene.addEventListener('loaded',()=>{
+        const arCam=document.querySelector('[arjs-camera]')||document.querySelector('a-entity[camera]');
+        if(!arCam){console.warn('No AR.js camera found');return;}
+
+        const rig=document.createElement('a-entity');
+        rig.setAttribute('id','rig');
+
+        // Lighting setup
+        const amb=document.createElement('a-entity');amb.setAttribute('light','type:ambient;intensity:10;color:#FA7AAE');rig.appendChild(amb);
+        const key=document.createElement('a-entity');key.setAttribute('position','1 2 -1');key.setAttribute('light','type:directional;intensity:8;color:#8BFCFC');rig.appendChild(key);
+        const rim=document.createElement('a-entity');rim.setAttribute('position','-2 2 1');rim.setAttribute('light','type:directional;intensity:8;color:#E65E63');rig.appendChild(rim);
+        const point=document.createElement('a-entity');point.setAttribute('position','0.5 0.6 -0.8');point.setAttribute('light','type:point;intensity:10;distance:4;color:#FFFFFF');rig.appendChild(point);
+        const hemi=document.createElement('a-entity');hemi.setAttribute('light','type:hemisphere;color:#AAFFFF;groundColor:#0088FF;intensity:2.5');rig.appendChild(hemi);
+        const sparkle=document.createElement('a-entity');sparkle.setAttribute('position','0.3 0.6 -0.6');sparkle.setAttribute('light','type:point;intensity:8;distance:1;color:#FFFF00');rig.appendChild(sparkle);
+
+        // Setup raycaster for clicking
+        const mouseCursor=document.createElement('a-entity');
+        mouseCursor.setAttribute('cursor','rayOrigin: mouse; fuse: false');
+        mouseCursor.setAttribute('raycaster','objects: .clickable; far: 100; interval: 0');
+        scene.appendChild(mouseCursor);
+
+        // Track which bubbles have been popped
+        const poppedBubbles = new Set();
+
+        // Create all 4 bubbles
+        poemData.forEach((poem, index) => {
+          const bubbleContainer = document.createElement('a-entity');
+          bubbleContainer.setAttribute('id', `bubble-${index}`);
+          bubbleContainer.setAttribute('position', `${poem.position.x} ${poem.position.y} ${poem.position.z}`);
+          bubbleContainer.setAttribute('rotation', '15 15 15');
+          bubbleContainer.setAttribute('scale', '2 2 2');
+          bubbleContainer.setAttribute('bubble-rise', 'rise:0.02; ampXZ:0.09 0.09; speedXZ:0.07 0.09; tilt:2 5 2');
+
+          if (poem.isCamera) {
+            // Create camera bubble
+            const cameraBubble = document.createElement('a-entity');
+            cameraBubble.setAttribute('webcam-bubble', 'radius: 0.35');
+            cameraBubble.classList.add('clickable');
+            cameraBubble.setAttribute('data-bubble-index', index);
+            bubbleContainer.appendChild(cameraBubble);
+          } else {
+            // Create regular model bubble
+            const modelBubble = document.createElement('a-entity');
+            modelBubble.setAttribute('gltf-model', '#myModel');
+            modelBubble.setAttribute('animation-mixer', 'loop: repeat');
+            modelBubble.setAttribute('force-phong', 'shininess:400');
+            modelBubble.classList.add('clickable');
+            modelBubble.setAttribute('data-bubble-index', index);
+            bubbleContainer.appendChild(modelBubble);
+          }
+
+          // Create split animation entity (hidden initially)
+          const split = document.createElement('a-entity');
+          split.setAttribute('gltf-model', '#mySplit');
+          split.setAttribute('scale', '1 1 1');
+          split.setAttribute('force-phong', 'shininess:800');
+          split.setAttribute('bubble-fade', 'from:0.07; to:0; dur:1500; delay:100');
+          split.setAttribute('visible', 'false');
+          bubbleContainer.appendChild(split);
+
+          rig.appendChild(bubbleContainer);
+
+          // Wait for split model to load
+          let splitReady = false;
+          split.addEventListener('model-loaded', () => {
+            splitReady = true;
+          });
+
+          // Click handler
+          bubbleContainer.addEventListener('click', (e) => {
+            if (poppedBubbles.has(index) || !splitReady) return;
+            
+            poppedBubbles.add(index);
+
+            // Hide the clickable bubble
+            const clickable = bubbleContainer.querySelector('.clickable');
+            if (clickable) {
+              clickable.setAttribute('visible', 'false');
+            }
+
+            // Show and animate split
+            split.setAttribute('visible', 'true');
+            split.setAttribute('animation-mixer', 'clip:*; loop:once; repetitions:1; timeScale:1; clampWhenFinished:true');
+            split.emit('start-fade');
+
+            // Create text that fades in and out
+            const txt = document.createElement('a-entity');
+            txt.setAttribute('text', {
+              value: poem.text,
+              color: '#A8DBE6',
+              align: 'center',
+              width: 1.2,
+              opacity: 0,
+              font: 'https://cdn.aframe.io/fonts/Exo2Bold.fnt'
+            });
+            
+            // Position text in front of bubble
+            const textPos = new THREE.Vector3(poem.position.x, poem.position.y, poem.position.z + 0.4);
+            txt.object3D.position.copy(textPos);
+            txt.object3D.scale.set(0.1, 0.1, 0.1);
+            txt.setAttribute('billboard', '');
+            
+            rig.appendChild(txt);
+
+            // Animations: scale in, fade in, wait 5 seconds, fade out
+            txt.setAttribute('animation__scalein', {
+              property: 'scale',
+              from: '0.1 0.1 0.1',
+              to: '0.6 0.6 0.6',
+              dur: 800,
+              easing: 'easeOutBack'
+            });
+            txt.setAttribute('animation__fadein', {
+              property: 'text.opacity',
+              from: 0,
+              to: 1,
+              dur: 800,
+              easing: 'easeOutSine'
+            });
+            txt.setAttribute('animation__fadeout', {
+              property: 'text.opacity',
+              from: 1,
+              to: 0,
+              dur: 1500,
+              delay: 5000,  // Stay visible for 5 seconds
+              easing: 'easeInSine'
+            });
+
+            // Remove text after fade out completes
+            setTimeout(() => {
+              rig.removeChild(txt);
+            }, 6500);
+          });
+        });
+
+        arCam.appendChild(rig);
+      });
+    });
+  </script>
+</head>
+<body>
+  <a-scene embedded vr-mode-ui="enabled:false" renderer="physicallyCorrectLights:true;antialias:true;logarithmicDepthBuffer:true;colorManagement:true;toneMapping:ACESFilmic;exposure:1.9" arjs="sourceType:webcam;trackingMethod:best;debugUIEnabled:false">
+    <a-assets>
+      <a-asset-item id="myModel" src="wobble5.glb"></a-asset-item>
+      <a-asset-item id="mySplit" src="BubbleSplit.glb"></a-asset-item>
+    </a-assets>
+    <a-entity camera arjs-camera></a-entity>
+  </a-scene>
+</body>
+</html>
