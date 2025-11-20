@@ -12,7 +12,6 @@
     // ==================== CONFIGURATION ====================
     const CONFIG = {
       BUBBLE: {
-        SPAWN_DISTANCE: 1.0,  // Distance in front of camera to spawn (meters)
         RISE_SPEED: 0.02,
         AMPLITUDE_XZ: { x: 0.09, y: 0.09 },
         SPEED_XZ: { x: 0.07, y: 0.09 },
@@ -271,20 +270,17 @@
       scene.appendChild(mouseCursor);
     }
     
-    function createBubbleContainer(camera) {
+    function createBubbleContainer(bubbleIndex) {
       const container = document.createElement('a-entity');
       
-      // Get camera's current world position and rotation
-      const camPos = camera.object3D.getWorldPosition(new THREE.Vector3());
-      const camRot = camera.object3D.rotation;
+      // Spawn at FIXED world coordinates (not camera-relative)
+      // Create a circular arrangement in front of origin
+      const angle = (bubbleIndex * Math.PI * 2) / POEM.length;
+      const radius = 0.5;
+      const x = Math.cos(angle) * radius;
+      const z = Math.sin(angle) * radius - 1.5;  // -1.5 puts it in front of camera at origin
       
-      // Calculate position at SPAWN_DISTANCE in front of camera
-      const distance = CONFIG.BUBBLE.SPAWN_DISTANCE;
-      const offsetX = -Math.sin(camRot.y) * distance;
-      const offsetZ = -Math.cos(camRot.y) * distance;
-      
-      // Position bubble in world space
-      container.setAttribute('position', `${camPos.x + offsetX} ${camPos.y - 0.45} ${camPos.z + offsetZ}`);
+      container.setAttribute('position', `${x} 0 ${z}`);
       container.setAttribute('rotation', CONFIG.BUBBLE.ROTATION);
       container.setAttribute('scale', CONFIG.BUBBLE.SCALE);
       container.setAttribute('bubble-rise', 
@@ -412,7 +408,7 @@
     
     // ==================== MAIN BUBBLE SPAWNER ====================
     
-    function createBubbleSpawner(scene, camera) {
+    function createBubbleSpawner(scene) {
       let currentBubbleIndex = 0;
       
       function spawnBubble() {
@@ -424,8 +420,8 @@
         console.log(`\n=== Spawning bubble ${currentBubbleIndex + 1} ===`);
         const poemData = POEM[currentBubbleIndex];
         
-        // Create bubble container in world space based on current camera position
-        const container = createBubbleContainer(camera);
+        // Create bubble container at fixed world coordinates
+        const container = createBubbleContainer(currentBubbleIndex);
         
         if (poemData.isCamera) {
           console.log('Type: CAMERA bubble');
@@ -439,7 +435,7 @@
           container.appendChild(clickSphere);
         }
         
-        // Append to scene (world space)
+        // Append to scene at fixed world coordinates
         scene.appendChild(container);
         
         // Setup click handler - everything stays in world space
@@ -479,8 +475,8 @@
         // Attach rig to camera (for lighting)
         arCam.appendChild(rig);
         
-        // Create and start bubble spawner (everything in world space)
-        const spawnBubble = createBubbleSpawner(scene, arCam);
+        // Create and start bubble spawner (fixed world coordinates)
+        const spawnBubble = createBubbleSpawner(scene);
         spawnBubble();
       });
     });
