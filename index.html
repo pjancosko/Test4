@@ -331,7 +331,7 @@
       };
     }
     
-    function createSplitAnimation(transform, rig) {
+    function createSplitAnimation(transform, scene) {
       const split = document.createElement('a-entity');
       split.setAttribute('gltf-model', '#mySplit');
       split.setAttribute('position', `${transform.position.x} ${transform.position.y} ${transform.position.z}`);
@@ -343,7 +343,7 @@
         `from:${CONFIG.SPLIT.FADE_FROM}; to:${CONFIG.SPLIT.FADE_TO}; dur:${CONFIG.SPLIT.FADE_DURATION}; delay:${CONFIG.SPLIT.FADE_DELAY}`);
       split.setAttribute('animation-mixer', 'clip:*; loop:once; repetitions:1; clampWhenFinished:true');
       
-      rig.appendChild(split);
+      scene.appendChild(split);
       
       setTimeout(() => {
         split.emit('start-fade');
@@ -352,7 +352,7 @@
       return split;
     }
     
-    function createTextDisplay(text, transform, rig) {
+    function createTextDisplay(text, transform, scene) {
       const txt = document.createElement('a-text');
       txt.setAttribute('value', text);
       txt.setAttribute('color', CONFIG.TEXT.COLOR);
@@ -361,7 +361,7 @@
       txt.setAttribute('position', `${transform.position.x} ${transform.position.y} ${transform.position.z + CONFIG.TEXT.OFFSET_Z}`);
       txt.setAttribute('look-at', '[camera]');
       
-      rig.appendChild(txt);
+      scene.appendChild(txt);
       
       // Fade text after display time
       setTimeout(() => {
@@ -372,13 +372,13 @@
       return txt;
     }
     
-    function cleanupElements(rig, elements) {
+    function cleanupElements(scene, elements) {
       elements.forEach(el => {
-        if (rig.contains(el)) rig.removeChild(el);
+        if (scene.contains(el)) scene.removeChild(el);
       });
     }
     
-    function handleBubblePop(container, poemData, index, rig, onComplete) {
+    function handleBubblePop(container, poemData, index, scene, onComplete) {
       let clicked = false;
       
       container.addEventListener('click', () => {
@@ -393,18 +393,18 @@
         // Hide bubble
         container.setAttribute('visible', 'false');
         
-        // Show split animation
+        // Show split animation (in world space)
         console.log('▶️  Playing split animation');
-        const split = createSplitAnimation(transform, rig);
+        const split = createSplitAnimation(transform, scene);
         
-        // Show text
+        // Show text (in world space)
         console.log('📝 Showing text:', poemData.text.substring(0, 30) + '...');
-        const txt = createTextDisplay(poemData.text, transform, rig);
+        const txt = createTextDisplay(poemData.text, transform, scene);
         
         // Clean up and spawn next
         setTimeout(() => {
           console.log('🧹 Cleaning up');
-          cleanupElements(rig, [txt, split, container]);
+          cleanupElements(scene, [txt, split, container]);
           onComplete();
         }, CONFIG.TIMING.CLEANUP_DELAY);
       });
@@ -412,7 +412,7 @@
     
     // ==================== MAIN BUBBLE SPAWNER ====================
     
-    function createBubbleSpawner(scene, camera, rig) {
+    function createBubbleSpawner(scene, camera) {
       let currentBubbleIndex = 0;
       
       function spawnBubble() {
@@ -439,11 +439,11 @@
           container.appendChild(clickSphere);
         }
         
-        // Append to scene (world space), not rig (camera space)
+        // Append to scene (world space)
         scene.appendChild(container);
         
-        // Setup click handler - still use rig for split/text effects
-        handleBubblePop(container, poemData, currentBubbleIndex, rig, () => {
+        // Setup click handler - everything stays in world space
+        handleBubblePop(container, poemData, currentBubbleIndex, scene, () => {
           currentBubbleIndex++;
           spawnBubble();
         });
@@ -479,8 +479,8 @@
         // Attach rig to camera (for lighting)
         arCam.appendChild(rig);
         
-        // Create and start bubble spawner (bubbles go in world space)
-        const spawnBubble = createBubbleSpawner(scene, arCam, rig);
+        // Create and start bubble spawner (everything in world space)
+        const spawnBubble = createBubbleSpawner(scene, arCam);
         spawnBubble();
       });
     });
