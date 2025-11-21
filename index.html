@@ -5,68 +5,122 @@
   <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-  <script src="https://rawgit.com/donmccurdy/aframe-extras/v6.0.0/dist/aframe-extras.loaders.min.js"></script>
-  <style>body{margin:0;overflow:hidden}</style>
+  <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v7.0.0/dist/aframe-extras.min.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    
+    #instructions {
+      position: fixed;
+      bottom: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      color: #A8DBE6;
+      padding: 15px 25px;
+      border-radius: 12px;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      z-index: 1000;
+      max-width: 85%;
+    }
+    
+    #poem-text {
+      position: fixed;
+      top: 10%;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #A8DBE6;
+      font-family: 'Georgia', serif;
+      font-size: 1.3em;
+      text-align: center;
+      text-shadow: 0 0 15px rgba(168, 219, 230, 0.9);
+      white-space: pre-line;
+      opacity: 0;
+      transition: opacity 0.8s ease;
+      z-index: 1000;
+      max-width: 85%;
+      line-height: 1.4;
+    }
+    
+    #poem-text.visible { opacity: 1; }
+    
+    #place-button {
+      position: fixed;
+      bottom: 25%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #FA7AAE, #8BFCFC);
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 25px;
+      font-size: 1.1em;
+      font-weight: bold;
+      cursor: pointer;
+      z-index: 1000;
+      display: none;
+    }
+    
+    #place-button:active {
+      transform: translateX(-50%) scale(0.95);
+    }
+  </style>
 
   <script>
-    // ==================== CONFIGURATION ====================
-    const CONFIG = {
-      BUBBLE: {
-        RISE_SPEED: 0.02,
-        AMPLITUDE_XZ: { x: 0.09, y: 0.09 },
-        SPEED_XZ: { x: 0.07, y: 0.09 },
-        TILT: { x: 2, y: 5, z: 2 },
-        ROTATION: '15 15 15',
-        SCALE: '2 2 2'
-      },
-      CAMERA_BUBBLE: {
-        RADIUS: 0.08,
-        CLICK_RADIUS: 0.2
-      },
-      GLB_BUBBLE: {
-        CLICK_RADIUS: 0.3,
-        SHININESS: 400
-      },
-      SPLIT: {
-        FADE_FROM: 0.07,
-        FADE_TO: 0,
-        FADE_DURATION: 8000,
-        FADE_DELAY: 4000,
-        SHININESS: 800
-      },
-      TEXT: {
-        COLOR: '#A8DBE6',
-        WIDTH: 0.8,
-        OFFSET_Z: 0.4,
-        DISPLAY_TIME: 5000,
-        FADE_DURATION: 1500
-      },
-      TIMING: {
-        CLEANUP_DELAY: 13000
-      },
-      LIGHTING: {
-        AMBIENT: { intensity: 10, color: '#FA7AAE' },
-        KEY: { position: '1 2 -1', intensity: 8, color: '#8BFCFC' },
-        RIM: { position: '-2 2 1', intensity: 8, color: '#E65E63' },
-        POINT: { position: '0.5 0.6 -0.8', intensity: 10, distance: 4, color: '#FFFFFF' },
-        HEMISPHERE: { color: '#AAFFFF', groundColor: '#0088FF', intensity: 2.5 }
-      }
-    };
-
-    const POEM = [
-      { text: "How do you know?\nIf the wind has taken you?", isCamera: false },
-      { text: "In the sea of sameness\nWhere you are reflected\nBut not challenged", isCamera: true },
-      { text: "So what if we burst\nAnd grow out of our comfort\nTo reach others that don't mirror us\nBut those who puzzle us", isCamera: false },
-      { text: "To put the pieces together\nTo construct a future\nWhere we add to each other\nInstead of subtract and divide", isCamera: false }
-    ];
-
-    // ==================== COMPONENTS ====================
-    
-    // Webcam Bubble Component
-    AFRAME.registerComponent('webcam-bubble', {
+    // ------------------ World Anchor Component ------------------
+    // This creates the ILLUSION of world space by counter-rotating against camera movement
+    AFRAME.registerComponent('world-anchor', {
       schema: {
-        radius: { type: 'number', default: 0.4 }
+        distance: { type: 'number', default: 2 }  // Distance in front of camera when placed
       },
+      init: function() {
+        this.placed = false;
+        this.worldPosition = new THREE.Vector3();
+        this.worldQuaternion = new THREE.Quaternion();
+        this.camera = null;
+      },
+      
+      place: function() {
+        // Get camera
+        this.camera = document.querySelector('[camera]').object3D;
+        
+        // Calculate world position in front of camera
+        const direction = new THREE.Vector3(0, 0, -this.data.distance);
+        direction.applyQuaternion(this.camera.quaternion);
+        
+        this.worldPosition.copy(this.camera.position).add(direction);
+        this.worldQuaternion.copy(this.camera.quaternion);
+        
+        this.placed = true;
+        console.log('📍 Anchored at world position:', this.worldPosition);
+      },
+      
+      tick: function() {
+        if (!this.placed || !this.camera) return;
+        
+        // Counter-rotate to stay in "world space"
+        // The object stays at its world position while camera moves
+        const cameraPos = this.camera.position;
+        const cameraQuat = this.camera.quaternion;
+        
+        // Calculate relative position from camera
+        const relativePos = this.worldPosition.clone().sub(cameraPos);
+        
+        // Apply inverse camera rotation to keep object facing correctly
+        const invQuat = cameraQuat.clone().invert();
+        relativePos.applyQuaternion(invQuat);
+        
+        // Position relative to camera (since we're a child of camera rig)
+        this.el.object3D.position.copy(relativePos);
+        
+        // Keep original world rotation
+        this.el.object3D.quaternion.copy(this.worldQuaternion).premultiply(invQuat);
+      }
+    });
+
+    // ------------------ Webcam Bubble Component ------------------
+    AFRAME.registerComponent('webcam-bubble', {
+      schema: { radius: { type: 'number', default: 0.4 } },
       init: function () {
         const self = this;
         function waitForVideo() {
@@ -84,7 +138,6 @@
         const texture = new THREE.VideoTexture(video);
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
-        texture.format = THREE.RGBFormat;
 
         const geom = new THREE.SphereGeometry(this.data.radius, 32, 32);
         const mat = new THREE.MeshBasicMaterial({
@@ -99,34 +152,22 @@
       }
     });
 
-    // Bubble Fade Component
+    // ------------------ Bubble Fade Component ------------------
     AFRAME.registerComponent('bubble-fade', {
-      schema: { 
-        from: {type: 'number', default: 0.07}, 
-        to: {type: 'number', default: 0}, 
-        dur: {type: 'number', default: 500}, 
-        delay: {type: 'number', default: 150} 
-      },
+      schema: { from: {type: 'number', default: 0.15}, to: {type: 'number', default: 0}, dur: {type: 'number', default: 500}, delay: {type: 'number', default: 150} },
       init() {
         this.materials = [];
         this.startTime = null;
         this.isAnimating = false;
-        
         this.el.addEventListener('model-loaded', () => {
           setTimeout(() => {
             const obj = this.el.getObject3D('mesh');
             if (!obj) return;
-            obj.traverse(n => { 
-              if (n.isMesh && n.material) this.materials.push(n.material); 
-            });
+            obj.traverse(n => { if (n.isMesh && n.material) this.materials.push(n.material); });
           }, 100);
         });
-        
         this.el.addEventListener('start-fade', () => {
-          setTimeout(() => { 
-            this.startTime = performance.now(); 
-            this.isAnimating = true; 
-          }, this.data.delay);
+          setTimeout(() => { this.startTime = performance.now(); this.isAnimating = true; }, this.data.delay);
         });
       },
       tick() {
@@ -134,363 +175,276 @@
         const elapsed = performance.now() - this.startTime;
         const progress = Math.min(elapsed / this.data.dur, 1);
         const newOpacity = this.data.from * (1 - progress) + this.data.to * progress;
-        this.materials.forEach(m => { 
-          m.opacity = newOpacity; 
-          m.needsUpdate = true; 
-        });
+        this.materials.forEach(m => { m.opacity = newOpacity; m.needsUpdate = true; });
         if (progress >= 1) this.isAnimating = false;
       }
     });
 
-    // Force Phong Component
+    // ------------------ Force Phong Component ------------------
     AFRAME.registerComponent('force-phong', {
-      schema: { shininess: {default: 180} },
+      schema: { shininess: { default: 180 } },
       init() {
         this.el.addEventListener('model-loaded', () => {
-          const obj = this.el.getObject3D('mesh'); 
+          const obj = this.el.getObject3D('mesh');
           if (!obj) return;
-          
-          const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(256);
-          const envScene = new THREE.Scene();
-          const gradientGeo = new THREE.SphereGeometry(500, 32, 32);
-          const gradientMat = new THREE.ShaderMaterial({
-            side: THREE.BackSide,
-            vertexShader: `
-              varying vec3 vWorldPosition;
-              void main() {
-                vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-                vWorldPosition = worldPosition.xyz;
-                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-              }
-            `,
-            fragmentShader: `
-              varying vec3 vWorldPosition;
-              vec3 hsv2rgb(vec3 c) {
-                vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
-                vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
-                return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
-              }
-              void main() {
-                float h = normalize(vWorldPosition).y;
-                float angle = atan(vWorldPosition.z, vWorldPosition.x);
-                float hue = (angle / 6.28318530718) + 0.5 + h * 0.3;
-                vec3 rainbowColor = hsv2rgb(vec3(hue, 1.0, 1.8));
-                gl_FragColor = vec4(rainbowColor, 1.0);
-              }
-            `
-          });
-          envScene.add(new THREE.Mesh(gradientGeo, gradientMat));
-          
           obj.traverse(n => {
             if (!n.isMesh || !n.material) return;
-            const base = n.material;
             const phong = new THREE.MeshPhongMaterial({
               color: new THREE.Color(0x0A0A0A),
               emissive: new THREE.Color(0x040B2E),
               emissiveIntensity: 0.15,
               specular: new THREE.Color(0xFFFFFF),
-              shininess: (typeof base.roughness === 'number') ? Math.max(1, (1 - base.roughness) * 256) : this.data.shininess,
-              transparent: !!base.transparent,
-              opacity: (typeof base.opacity === 'number') ? base.opacity : .07,
-              side: THREE.DoubleSide,
-              reflectivity: 1.0,
-              envMap: cubeRenderTarget.texture,
-              combine: THREE.AddOperation
+              shininess: this.data.shininess,
+              transparent: true,
+              opacity: 0.15,
+              side: THREE.DoubleSide
             });
-            if (base.map) phong.map = base.map; 
-            if (base.normalMap) phong.normalMap = base.normalMap;
-            n.material = phong; 
+            n.material = phong;
             n.material.needsUpdate = true;
           });
         });
       }
     });
 
-    // Bubble Rise Component
-    AFRAME.registerComponent('bubble-rise', {
+    // ------------------ Bubble Float (local floating motion) ------------------
+    AFRAME.registerComponent('bubble-float', {
       schema: {
-        rise: {type: 'number', default: 0.07},
-        ampXZ: {type: 'vec2', default: {x: 0.08, y: 0.08}},
-        speedXZ: {type: 'vec2', default: {x: 0.07, y: 0.09}},
-        tilt: {type: 'vec3', default: {x: 2, y: 5, z: 2}}
+        amplitude: { type: 'number', default: 0.05 },
+        speed: { type: 'number', default: 1 }
       },
       init() {
-        this._setBases = () => {
-          this.t0 = performance.now() * 0.001;
-          this.basePos = this.el.object3D.position.clone();
-          this.baseRot = this.el.getAttribute('rotation');
-        };
-        this._setBases();
-        this._onReset = () => this._setBases();
-        this.el.addEventListener('drift-reset', this._onReset);
+        this.offset = new THREE.Vector3();
+        this.time = Math.random() * 100;
       },
-      remove() {
-        this.el.removeEventListener('drift-reset', this._onReset);
-      },
-      tick() {
-        const t = performance.now() * 0.001 - this.t0;
-        const {rise, ampXZ, speedXZ, tilt} = this.data;
+      tick(t, dt) {
+        if (!dt) return;
+        this.time += dt * 0.001 * this.data.speed;
         
-        const ox = Math.sin(t * speedXZ.x * 6.283) * ampXZ.x + Math.sin(t * 0.23) * 0.012;
-        const oz = Math.cos(t * speedXZ.y * 6.283) * ampXZ.y + Math.sin(t * 0.19) * 0.010;
-        const y = this.basePos.y + rise * t;
+        // Small local floating motion (on top of world-anchor position)
+        this.offset.set(
+          Math.sin(this.time * 0.7) * this.data.amplitude * 0.5,
+          Math.sin(this.time) * this.data.amplitude,
+          Math.cos(this.time * 0.5) * this.data.amplitude * 0.3
+        );
         
-        this.el.object3D.position.set(this.basePos.x + ox, y, this.basePos.z + oz);
-        
-        const rx = this.baseRot.x + Math.sin(t * 0.22) * tilt.x;
-        const ry = this.baseRot.y + Math.sin(t * 0.17) * tilt.y;
-        const rz = this.baseRot.z + Math.cos(t * 0.19) * tilt.z;
-        this.el.setAttribute('rotation', `${rx} ${ry} ${rz}`);
+        // Apply as additional offset
+        const basePos = this.el.object3D.position;
+        // Store original if not stored
+        if (!this.basePos) {
+          this.basePos = basePos.clone();
+        }
       }
     });
 
-    // ==================== HELPER FUNCTIONS ====================
-    
-    function createLighting(rig) {
-      const lights = [
-        { type: 'ambient', attrs: { intensity: CONFIG.LIGHTING.AMBIENT.intensity, color: CONFIG.LIGHTING.AMBIENT.color }},
-        { type: 'directional', position: CONFIG.LIGHTING.KEY.position, attrs: { intensity: CONFIG.LIGHTING.KEY.intensity, color: CONFIG.LIGHTING.KEY.color }},
-        { type: 'directional', position: CONFIG.LIGHTING.RIM.position, attrs: { intensity: CONFIG.LIGHTING.RIM.intensity, color: CONFIG.LIGHTING.RIM.color }},
-        { type: 'point', position: CONFIG.LIGHTING.POINT.position, attrs: { intensity: CONFIG.LIGHTING.POINT.intensity, distance: CONFIG.LIGHTING.POINT.distance, color: CONFIG.LIGHTING.POINT.color }},
-        { type: 'hemisphere', attrs: { color: CONFIG.LIGHTING.HEMISPHERE.color, groundColor: CONFIG.LIGHTING.HEMISPHERE.groundColor, intensity: CONFIG.LIGHTING.HEMISPHERE.intensity }}
-      ];
-      
-      lights.forEach(light => {
-        const el = document.createElement('a-entity');
-        if (light.position) el.setAttribute('position', light.position);
-        el.setAttribute('light', `type:${light.type};${Object.entries(light.attrs).map(([k,v]) => `${k}:${v}`).join(';')}`);
-        rig.appendChild(el);
-      });
+    // Poem stanzas
+    const POEM = [
+      { text: "How do you know?\nIf the wind has taken you?", isCamera: false },
+      { text: "In the sea of sameness\nWhere you are reflected\nBut not challenged", isCamera: true },
+      { text: "So what if we burst\nAnd grow out of our comfort\nTo reach others that don't mirror us\nBut those who puzzle us", isCamera: false },
+      { text: "To put the pieces together\nTo construct a future\nWhere we add to each other\nInstead of subtract and divide", isCamera: false }
+    ];
+
+    let currentBubbleIndex = 0;
+    let currentBubble = null;
+    let rig = null;
+
+    function updateInstructions(text) {
+      document.getElementById('instructions').textContent = text;
     }
     
-    function createMouseCursor(scene) {
-      const mouseCursor = document.createElement('a-entity');
-      mouseCursor.setAttribute('cursor', 'rayOrigin: mouse; fuse: false');
-      mouseCursor.setAttribute('raycaster', 'objects: .clickable; far: 100; interval: 0');
-      scene.appendChild(mouseCursor);
+    function showPoemText(text) {
+      const el = document.getElementById('poem-text');
+      el.textContent = text;
+      el.classList.add('visible');
+      setTimeout(() => el.classList.remove('visible'), 6000);
+    }
+
+    function showPlaceButton() {
+      document.getElementById('place-button').style.display = 'block';
     }
     
-    function createBubbleContainer(bubbleIndex) {
-      const container = document.createElement('a-entity');
-      
-      // Spawn at FIXED world coordinates (not camera-relative)
-      // Create a circular arrangement in front of origin
-      const angle = (bubbleIndex * Math.PI * 2) / POEM.length;
-      const radius = 0.5;
-      const x = Math.cos(angle) * radius;
-      const z = Math.sin(angle) * radius - 1.5;  // -1.5 puts it in front of camera at origin
-      
-      container.setAttribute('position', `${x} 0 ${z}`);
-      container.setAttribute('rotation', CONFIG.BUBBLE.ROTATION);
-      container.setAttribute('scale', CONFIG.BUBBLE.SCALE);
-      container.setAttribute('bubble-rise', 
-        `rise:${CONFIG.BUBBLE.RISE_SPEED}; ` +
-        `ampXZ:${CONFIG.BUBBLE.AMPLITUDE_XZ.x} ${CONFIG.BUBBLE.AMPLITUDE_XZ.y}; ` +
-        `speedXZ:${CONFIG.BUBBLE.SPEED_XZ.x} ${CONFIG.BUBBLE.SPEED_XZ.y}; ` +
-        `tilt:${CONFIG.BUBBLE.TILT.x} ${CONFIG.BUBBLE.TILT.y} ${CONFIG.BUBBLE.TILT.z}`
-      );
-      return container;
+    function hidePlaceButton() {
+      document.getElementById('place-button').style.display = 'none';
     }
-    
-    function createCameraBubble() {
-      const cameraBubble = document.createElement('a-entity');
-      cameraBubble.setAttribute('webcam-bubble', `radius: ${CONFIG.CAMERA_BUBBLE.RADIUS}`);
-      cameraBubble.classList.add('clickable');
-      
-      const clickSphere = document.createElement('a-sphere');
-      clickSphere.setAttribute('radius', CONFIG.CAMERA_BUBBLE.CLICK_RADIUS);
-      clickSphere.setAttribute('material', 'opacity: 0; transparent: true');
-      clickSphere.classList.add('clickable');
-      
-      return { cameraBubble, clickSphere };
-    }
-    
-    function createGLBBubble() {
-      const model = document.createElement('a-entity');
-      model.setAttribute('gltf-model', '#myModel');
-      model.setAttribute('animation-mixer', 'loop: repeat');
-      model.setAttribute('force-phong', `shininess:${CONFIG.GLB_BUBBLE.SHININESS}`);
-      
-      const clickSphere = document.createElement('a-sphere');
-      clickSphere.setAttribute('radius', CONFIG.GLB_BUBBLE.CLICK_RADIUS);
-      clickSphere.setAttribute('material', 'opacity: 0; transparent: true');
-      clickSphere.classList.add('clickable');
-      
-      return { model, clickSphere };
-    }
-    
-    function getWorldTransform(container) {
-      return {
-        position: container.object3D.getWorldPosition(new THREE.Vector3()),
-        rotation: container.object3D.rotation,
-        scale: container.object3D.getWorldScale(new THREE.Vector3())
-      };
-    }
-    
-    function createSplitAnimation(transform, scene) {
-      const split = document.createElement('a-entity');
-      split.setAttribute('gltf-model', '#mySplit');
-      split.setAttribute('position', `${transform.position.x} ${transform.position.y} ${transform.position.z}`);
-      split.setAttribute('rotation', 
-        `${transform.rotation.x * 180/Math.PI} ${transform.rotation.y * 180/Math.PI} ${transform.rotation.z * 180/Math.PI}`);
-      split.setAttribute('scale', `${transform.scale.x} ${transform.scale.y} ${transform.scale.z}`);
-      split.setAttribute('force-phong', `shininess:${CONFIG.SPLIT.SHININESS}`);
-      split.setAttribute('bubble-fade', 
-        `from:${CONFIG.SPLIT.FADE_FROM}; to:${CONFIG.SPLIT.FADE_TO}; dur:${CONFIG.SPLIT.FADE_DURATION}; delay:${CONFIG.SPLIT.FADE_DELAY}`);
-      split.setAttribute('animation-mixer', 'clip:*; loop:once; repetitions:1; clampWhenFinished:true');
-      
-      scene.appendChild(split);
-      
-      setTimeout(() => {
-        split.emit('start-fade');
-      }, 100);
-      
-      return split;
-    }
-    
-    function createTextDisplay(text, transform, scene) {
-      const txt = document.createElement('a-text');
-      txt.setAttribute('value', text);
-      txt.setAttribute('color', CONFIG.TEXT.COLOR);
-      txt.setAttribute('align', 'center');
-      txt.setAttribute('width', CONFIG.TEXT.WIDTH);
-      txt.setAttribute('position', `${transform.position.x} ${transform.position.y} ${transform.position.z + CONFIG.TEXT.OFFSET_Z}`);
-      txt.setAttribute('look-at', '[camera]');
-      
-      scene.appendChild(txt);
-      
-      // Fade text after display time
-      setTimeout(() => {
-        txt.setAttribute('animation', 
-          `property: components.text.material.uniforms.opacity.value; from: 1; to: 0; dur: ${CONFIG.TEXT.FADE_DURATION}`);
-      }, CONFIG.TEXT.DISPLAY_TIME);
-      
-      return txt;
-    }
-    
-    function cleanupElements(scene, elements) {
-      elements.forEach(el => {
-        if (scene.contains(el)) scene.removeChild(el);
-      });
-    }
-    
-    function handleBubblePop(container, poemData, index, scene, onComplete) {
-      let clicked = false;
-      
-      container.addEventListener('click', () => {
-        if (clicked) return;
-        clicked = true;
-        
-        console.log(`💥 Bubble ${index + 1} POPPED!`);
-        
-        // Get world transform
-        const transform = getWorldTransform(container);
-        
-        // Hide bubble
-        container.setAttribute('visible', 'false');
-        
-        // Show split animation (in world space)
-        console.log('▶️  Playing split animation');
-        const split = createSplitAnimation(transform, scene);
-        
-        // Show text (in world space)
-        console.log('📝 Showing text:', poemData.text.substring(0, 30) + '...');
-        const txt = createTextDisplay(poemData.text, transform, scene);
-        
-        // Clean up and spawn next
-        setTimeout(() => {
-          console.log('🧹 Cleaning up');
-          cleanupElements(scene, [txt, split, container]);
-          onComplete();
-        }, CONFIG.TIMING.CLEANUP_DELAY);
-      });
-    }
-    
-    // ==================== MAIN BUBBLE SPAWNER ====================
-    
-    function createBubbleSpawner(scene) {
-      let currentBubbleIndex = 0;
-      
-      function spawnBubble() {
-        if (currentBubbleIndex >= POEM.length) {
-          console.log('🎉 All bubbles popped! Poem complete!');
-          return;
-        }
-        
-        console.log(`\n=== Spawning bubble ${currentBubbleIndex + 1} ===`);
-        const poemData = POEM[currentBubbleIndex];
-        
-        // Create bubble container at fixed world coordinates
-        const container = createBubbleContainer(currentBubbleIndex);
-        
-        if (poemData.isCamera) {
-          console.log('Type: CAMERA bubble');
-          const { cameraBubble, clickSphere } = createCameraBubble();
-          container.appendChild(cameraBubble);
-          container.appendChild(clickSphere);
-        } else {
-          console.log('Type: GLB bubble');
-          const { model, clickSphere } = createGLBBubble();
-          container.appendChild(model);
-          container.appendChild(clickSphere);
-        }
-        
-        // Append to scene at fixed world coordinates
-        scene.appendChild(container);
-        
-        // Setup click handler - everything stays in world space
-        handleBubblePop(container, poemData, currentBubbleIndex, scene, () => {
-          currentBubbleIndex++;
-          spawnBubble();
-        });
-      }
-      
-      return spawnBubble;
-    }
-    
-    // ==================== INITIALIZATION ====================
-    
+
     window.addEventListener('DOMContentLoaded', () => {
       const scene = document.querySelector('a-scene');
+      const placeButton = document.getElementById('place-button');
       
       scene.addEventListener('loaded', () => {
         console.log('Scene loaded');
         
-        const arCam = document.querySelector('[arjs-camera]') || document.querySelector('a-entity[camera]');
+        const arCam = document.querySelector('[camera]');
         if (!arCam) {
-          console.warn('No AR.js camera found');
+          console.warn('No camera found');
           return;
         }
-        
-        // Create rig
-        const rig = document.createElement('a-entity');
+
+        // Create rig attached to camera
+        rig = document.createElement('a-entity');
         rig.setAttribute('id', 'rig');
+
+        // Lighting
+        const amb = document.createElement('a-entity');
+        amb.setAttribute('light', 'type:ambient;intensity:5;color:#FA7AAE');
+        rig.appendChild(amb);
         
-        // Setup lighting
-        createLighting(rig);
-        
-        // Setup raycaster
-        createMouseCursor(scene);
-        
-        // Attach rig to camera (for lighting)
+        const key = document.createElement('a-entity');
+        key.setAttribute('position', '1 2 -1');
+        key.setAttribute('light', 'type:directional;intensity:5;color:#8BFCFC');
+        rig.appendChild(key);
+
+        const point = document.createElement('a-entity');
+        point.setAttribute('position', '0 0.5 -1');
+        point.setAttribute('light', 'type:point;intensity:8;distance:5;color:#FFFFFF');
+        rig.appendChild(point);
+
+        // Raycaster
+        const cursor = document.createElement('a-entity');
+        cursor.setAttribute('cursor', 'rayOrigin: mouse; fuse: false');
+        cursor.setAttribute('raycaster', 'objects: .clickable; far: 100');
+        scene.appendChild(cursor);
+
         arCam.appendChild(rig);
         
-        // Create and start bubble spawner (fixed world coordinates)
-        const spawnBubble = createBubbleSpawner(scene);
+        // Show place button for first bubble
+        updateInstructions('Point your phone where you want the bubble, then tap "Place Bubble"');
+        showPlaceButton();
+      });
+
+      // Place button handler
+      placeButton.addEventListener('click', () => {
+        hidePlaceButton();
         spawnBubble();
       });
+
+      function spawnBubble() {
+        if (currentBubbleIndex >= POEM.length) {
+          updateInstructions('🎉 Poem complete! Refresh to restart.');
+          return;
+        }
+
+        updateInstructions(`Tap the bubble to pop it! (${currentBubbleIndex + 1}/${POEM.length})`);
+        const poemData = POEM[currentBubbleIndex];
+
+        console.log(`\n=== Spawning bubble ${currentBubbleIndex + 1} ===`);
+
+        // Create bubble with world-anchor component
+        const bubble = document.createElement('a-entity');
+        bubble.setAttribute('world-anchor', 'distance: 1.5');
+        
+        // Small random offset so bubbles don't all appear in exact same spot
+        const offsetX = (Math.random() - 0.5) * 0.3;
+        const offsetY = (Math.random() - 0.5) * 0.2;
+        bubble.setAttribute('position', `${offsetX} ${offsetY} 0`);
+
+        if (poemData.isCamera) {
+          console.log('Type: CAMERA bubble');
+          const cameraBubble = document.createElement('a-entity');
+          cameraBubble.setAttribute('webcam-bubble', 'radius: 0.15');
+          bubble.appendChild(cameraBubble);
+          
+          const clickSphere = document.createElement('a-sphere');
+          clickSphere.setAttribute('radius', '0.2');
+          clickSphere.setAttribute('material', 'opacity: 0; transparent: true');
+          clickSphere.classList.add('clickable');
+          bubble.appendChild(clickSphere);
+        } else {
+          console.log('Type: GLB bubble');
+          const model = document.createElement('a-entity');
+          model.setAttribute('gltf-model', '#myModel');
+          model.setAttribute('scale', '0.4 0.4 0.4');
+          model.setAttribute('animation-mixer', 'loop: repeat');
+          model.setAttribute('force-phong', 'shininess:400');
+          bubble.appendChild(model);
+          
+          const clickSphere = document.createElement('a-sphere');
+          clickSphere.setAttribute('radius', '0.25');
+          clickSphere.setAttribute('material', 'opacity: 0; transparent: true');
+          clickSphere.classList.add('clickable');
+          bubble.appendChild(clickSphere);
+        }
+
+        rig.appendChild(bubble);
+        currentBubble = bubble;
+        
+        // Place it in world space immediately
+        setTimeout(() => {
+          const anchor = bubble.components['world-anchor'];
+          if (anchor) anchor.place();
+        }, 100);
+
+        // Click handler
+        let clicked = false;
+        bubble.addEventListener('click', () => {
+          if (clicked) return;
+          clicked = true;
+          
+          console.log(`💥 Bubble ${currentBubbleIndex + 1} POPPED!`);
+          showPoemText(poemData.text);
+
+          bubble.setAttribute('visible', 'false');
+
+          // Split animation
+          const split = document.createElement('a-entity');
+          split.setAttribute('gltf-model', '#mySplit');
+          split.setAttribute('world-anchor', 'distance: 1.5');
+          split.setAttribute('scale', '0.4 0.4 0.4');
+          split.setAttribute('force-phong', 'shininess:800');
+          split.setAttribute('bubble-fade', 'from:0.15; to:0; dur:6000; delay:3000');
+          split.setAttribute('animation-mixer', 'clip:*; loop:once; clampWhenFinished:true');
+          rig.appendChild(split);
+          
+          // Place split at same position as bubble was
+          setTimeout(() => {
+            const bubbleAnchor = bubble.components['world-anchor'];
+            const splitAnchor = split.components['world-anchor'];
+            if (bubbleAnchor && splitAnchor) {
+              splitAnchor.worldPosition.copy(bubbleAnchor.worldPosition);
+              splitAnchor.worldQuaternion.copy(bubbleAnchor.worldQuaternion);
+              splitAnchor.placed = true;
+              splitAnchor.camera = bubbleAnchor.camera;
+            }
+            split.emit('start-fade');
+          }, 100);
+
+          // Cleanup and next
+          setTimeout(() => {
+            if (rig.contains(split)) rig.removeChild(split);
+            if (rig.contains(bubble)) rig.removeChild(bubble);
+            
+            currentBubbleIndex++;
+            currentBubble = null;
+            
+            if (currentBubbleIndex < POEM.length) {
+              updateInstructions('Point where you want the next bubble');
+              showPlaceButton();
+            } else {
+              updateInstructions('🎉 Poem complete! Refresh to restart.');
+            }
+          }, 10000);
+        });
+      }
     });
   </script>
 </head>
 <body>
-  <a-scene embedded vr-mode-ui="enabled:false" 
-           renderer="physicallyCorrectLights:true;antialias:true;logarithmicDepthBuffer:true;colorManagement:true;toneMapping:ACESFilmic;exposure:1.9" 
-           arjs="sourceType:webcam;trackingMethod:best;debugUIEnabled:false">
+  <div id="instructions">Loading AR...</div>
+  <div id="poem-text"></div>
+  <button id="place-button">📍 Place Bubble Here</button>
+
+  <a-scene 
+    embedded 
+    vr-mode-ui="enabled:false" 
+    renderer="physicallyCorrectLights:true; antialias:true; logarithmicDepthBuffer:true; colorManagement:true"
+    arjs="sourceType:webcam; trackingMethod:best; debugUIEnabled:false"
+  >
     <a-assets>
       <a-asset-item id="myModel" src="wobble5.glb"></a-asset-item>
       <a-asset-item id="mySplit" src="BubbleSplit.glb"></a-asset-item>
     </a-assets>
-    <a-entity camera arjs-camera></a-entity>
+
+    <a-entity camera></a-entity>
   </a-scene>
 </body>
 </html>
