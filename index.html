@@ -8,87 +8,128 @@
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <script src="https://rawgit.com/donmccurdy/aframe-extras/v6.0.0/dist/aframe-extras.loaders.min.js"></script>
+  <!-- Look-at for text -->
+  <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
 
   <style>body{margin:0;overflow:hidden}</style>
 
-      <script>
+  <script>
     // -------- Webcam Bubble (outer reflective shell) --------
     AFRAME.registerComponent('webcam-bubble', {
       schema: {
-        radius: { type: 'number', default: 0.25 } // will be overridden from GLB bounds
+        radius: { type: 'number', default: 0.25 } // local-space radius
       },
       init: function () {
+        this.mesh = null;
+        this.video = null;
+
         const self = this;
         function waitForVideo() {
           const video = document.querySelector('video');
           if (video && video.readyState >= 2) {
-            self.createBubble(video);
+            self.video = video;
+            self.createBubble();
           } else {
             setTimeout(waitForVideo, 200);
           }
         }
         waitForVideo();
       },
-      createBubble: function (video) {
+
+      // (Re)create the shell using the current radius (LOCAL space)
+      createBubble: function () {
         const THREE = window.THREE;
-        const texture = new THREE.VideoTexture(video);
+        if (!THREE || !this.video) return;
+
+        // Clean up any previous mesh
+        if (this.mesh) {
+          this.el.removeObject3D('mesh');
+          if (this.mesh.geometry) this.mesh.geometry.dispose();
+          if (this.mesh.material) {
+            if (this.mesh.material.map) this.mesh.material.map.dispose();
+            this.mesh.material.dispose();
+          }
+          this.mesh = null;
+        }
+
+        const texture = new THREE.VideoTexture(this.video);
         texture.minFilter = THREE.LinearFilter;
         texture.magFilter = THREE.LinearFilter;
-        texture.format = THREE.RGBFormat;
+        texture.format   = THREE.RGBFormat;
 
         const geom = new THREE.SphereGeometry(this.data.radius, 32, 32);
-        const mat = new THREE.MeshBasicMaterial({
+        const mat  = new THREE.MeshBasicMaterial({
           map: texture,
           transparent: true,
-          opacity: 0.25,     // 🔹 very subtle shell
-          side: THREE.BackSide, // 🔹 we’re outside, looking at inner faces
-          depthWrite: false, // help avoid z-fighting with inner GLB
+          opacity: 0.25,          // subtle shell
+          side: THREE.BackSide,   // we’re outside, looking at inner faces
+          depthWrite: false,
           depthTest: true
         });
 
-        const mesh = new THREE.Mesh(geom, mat);
-        mesh.renderOrder = 2; // draw after most things so it’s stable
-        this.el.setObject3D('mesh', mesh);
+        this.mesh = new THREE.Mesh(geom, mat);
+        this.mesh.renderOrder = 2;
+        this.el.setObject3D('mesh', this.mesh);
+      },
+
+      // Called whenever attributes (like radius) change
+      update: function (oldData) {
+        if (!oldData) return; // first run from init
+        if (oldData.radius !== this.data.radius && this.video) {
+          this.createBubble();
+        }
+      },
+
+      remove: function () {
+        if (this.mesh) {
+          this.el.removeObject3D('mesh');
+          if (this.mesh.geometry) this.mesh.geometry.dispose();
+          if (this.mesh.material) {
+            if (this.mesh.material.map) this.mesh.material.map.dispose();
+            this.mesh.material.dispose();
+          }
+          this.mesh = null;
+        }
       }
     });
 
-AFRAME.registerComponent('force-phong', {
-  schema: {
-    shininess:   { default: 180 },
-    baseOpacity: { default: 0.08 }  // 🔹 new: default very soft
-  },
-  init () {
-    this.el.addEventListener('model-loaded', () => {
-      const obj = this.el.getObject3D('mesh');
-      if (!obj) return;
+    // ---- Force Phong ----
+    AFRAME.registerComponent('force-phong', {
+      schema: {
+        shininess:   { default: 180 },
+        baseOpacity: { default: 0.08 }
+      },
+      init () {
+        this.el.addEventListener('model-loaded', () => {
+          const obj = this.el.getObject3D('mesh');
+          if (!obj) return;
 
-      obj.traverse(n => {
-        if (!n.isMesh || !n.material) return;
+          obj.traverse(n => {
+            if (!n.isMesh || !n.material) return;
 
-        const base = n.material;
-        const phong = new THREE.MeshPhongMaterial({
-          color:       0x222244,  // a bit lighter than before
-          emissive:    0x060a2e,
-          specular:    0xffffff,
-          shininess:   this.data.shininess,
-          transparent: true,
-          opacity:     (typeof base.opacity === 'number')
-                         ? base.opacity
-                         : this.data.baseOpacity,   // 🔹 use per-entity opacity
-          side:        THREE.DoubleSide,
-          depthWrite:  false  // 🔹 don't block the webcam shell
+            const base = n.material;
+            const phong = new THREE.MeshPhongMaterial({
+              color:       0x222244,
+              emissive:    0x060a2e,
+              specular:    0xffffff,
+              shininess:   this.data.shininess,
+              transparent: true,
+              opacity:     (typeof base.opacity === 'number')
+                             ? base.opacity
+                             : this.data.baseOpacity,
+              side:        THREE.DoubleSide,
+              depthWrite:  false
+            });
+
+            if (base.map)       phong.map       = base.map;
+            if (base.normalMap) phong.normalMap = base.normalMap;
+
+            n.material = phong;
+            n.material.needsUpdate = true;
+          });
         });
-
-        if (base.map)       phong.map       = base.map;
-        if (base.normalMap) phong.normalMap = base.normalMap;
-
-        n.material = phong;
-        n.material.needsUpdate = true;
-      });
+      }
     });
-  }
-});
-
 
     // ------------------ Bubble Fade (for split GLB) ------------------
     AFRAME.registerComponent('bubble-fade', {
@@ -137,36 +178,77 @@ AFRAME.registerComponent('force-phong', {
 
     // ------------------ Poem Data ------------------
     const POEM = [
-      { text: "How do you know?\nIf the wind has taken you?" },
-      { text: "In the sea of sameness\nWhere you are reflected\nBut not challenged" },
-      { text: "So what if we burst\nAnd grow out of our comfort\nTo reach others that puzzle us" },
-      { text: "To construct a future\nWhere we add to each other\nInstead of subtract and divide" }
+      { text: "are" },
+      { text: "you" },
+      { text: "seeing" },
+      { text: "mirrors" },
+		{ text: "seeing" },
+      { text: "only" },
+      { text: "what" },
+      { text: "pleases" },
+		 { text: "refelections" },
+		{ text: "sameness" },
+      { text: "comfort" },
+      { text: "or bursting" },
+      { text: "learning" },
+		{ text: "growing" },
+		
     ];
 
     // ------------------ Bubble / Split / Text Logic ------------------
     window.addEventListener('DOMContentLoaded', () => {
       const rig = document.querySelector('#rig');
-      let currentIndex = 0;
+      const MAX_BUBBLES    = 5;      // 4–5 bubbles always rising
+      const SPAWN_INTERVAL = 2000;   // how often we try to spawn a new one (ms)
+
+      let currentIndex     = 0;      // which stanza to show next (cycles)
+      let activeContainers = [];
+
+      function removeContainer(container) {
+        activeContainers = activeContainers.filter(c => c !== container);
+        if (rig.contains(container)) {
+          rig.removeChild(container);
+        }
+      }
+
+      // positions starting near the "bottom" of view, rising up
+      function randomBubbleStartPosition () {
+        const radius = 1 + Math.random() * 0.7;               // distance from camera
+        const angle  = (Math.random() - 0.5) * Math.PI / 3;   // spread left/right
+        const x = Math.sin(angle) * radius;
+        const z = -Math.cos(angle) * radius;
+        const y = -0.6 + Math.random() * 0.2;                 // start low (bottom-ish)
+        return { x, y, z };
+      }
 
       function spawnBubble () {
-        if (currentIndex >= POEM.length) {
-          console.log('🎉 All bubbles done');
-          return;
-        }
+        if (activeContainers.length >= MAX_BUBBLES) return;
 
-        const stanza = POEM[currentIndex];
-
-        // Container that floats using A-Frame animation
         const container = document.createElement('a-entity');
+        const startPos = randomBubbleStartPosition();
 
-        // Right in front of camera
-        container.setAttribute('position', '0 0 -1');
-        container.setAttribute('rotation', '15 15 15');
+        const startY = startPos.y;
+        const endY   = startY + 1.6 + Math.random() * 0.4;    // rise upwards
+
+        container.setAttribute('position', `${startPos.x} ${startY} ${startPos.z}`);
+        container.setAttribute('rotation',
+          `${15 + (Math.random()*10-5)} ${15 + (Math.random()*20-10)} ${15 + (Math.random()*10-5)}`);
         container.setAttribute('scale', '2 2 2');
+
+        const riseDur = 15000 + Math.random() * 5000; // 15–20 seconds
+
+        // one-way rise from bottom to top, then bubble is removed
         container.setAttribute(
           'animation__rise',
-          'property: position; dir: alternate; loop: true; dur: 4000; easing: easeInOutSine; to: 0 0.2 -1'
+          `property: position; dur: ${riseDur}; easing: easeInOutSine; to: ${startPos.x} ${endY} ${startPos.z}`
         );
+
+        // When rise animation completes and bubble wasn't clicked → remove it
+        container.addEventListener('animationcomplete__rise', () => {
+          if (rig.contains(container)) {
+            removeContainer(container);
+          }
+        });
 
         // --- Inner wobble GLB ---
         const model = document.createElement('a-entity');
@@ -176,22 +258,32 @@ AFRAME.registerComponent('force-phong', {
         model.setAttribute('position', '0 0 0');
         container.appendChild(model);
 
-        // --- Outer webcam reflective shell (slightly bigger than GLB) ---
+        // --- Outer webcam reflective shell (0.75 of GLB radius in WORLD space) ---
         const webcamShell = document.createElement('a-entity');
         webcamShell.setAttribute('position', '0 0 0');
 
         model.addEventListener('model-loaded', () => {
+          const THREE = window.THREE;
           const obj = model.getObject3D('mesh');
-          if (!obj) return;
+          if (!obj || !THREE) return;
 
+          // World-space bounds of wobble mesh (including container scale)
           const box = new THREE.Box3().setFromObject(obj);
           const size = new THREE.Vector3();
           box.getSize(size);
 
-          const wobbleRadius = Math.max(size.x, size.y, size.z) / 2;
-          const shellRadius = wobbleRadius * .75;  // more halo-like
+          const wobbleRadiusWorld = Math.max(size.x, size.y, size.z) / 2;
 
-          webcamShell.setAttribute('webcam-bubble', `radius:${shellRadius}`);
+          // Container's world scale, so we can convert back to LOCAL radius
+          const containerScale = container.object3D.getWorldScale(new THREE.Vector3());
+          const maxScale = Math.max(containerScale.x, containerScale.y, containerScale.z) || 1;
+
+          // Local radius such that world radius = 0.75 * wobbleRadiusWorld
+          const wobbleRadiusLocal = wobbleRadiusWorld / maxScale;
+          const shellRadiusLocal  = wobbleRadiusLocal * 0.5;
+
+          // Set LOCAL radius; webcam-bubble will build geometry with that
+          webcamShell.setAttribute('webcam-bubble', `radius:${shellRadiusLocal}`);
         });
 
         container.appendChild(webcamShell);
@@ -203,21 +295,17 @@ AFRAME.registerComponent('force-phong', {
         clickSphere.classList.add('clickable');
         container.appendChild(clickSphere);
 
-        rig.appendChild(container);
-
-        // Click → split → text → next bubble
-        let clicked = false;
+        // Click → split + text for THIS bubble only
         container.addEventListener('click', () => {
-          if (clicked) return;
-          clicked = true;
+          const stanza = POEM[currentIndex];
+          currentIndex = (currentIndex + 1) % POEM.length;  // cycle through poem
 
-          console.log(`💥 Bubble ${currentIndex + 1} popped`);
-
+          const THREE = window.THREE;
           const worldPos   = container.object3D.getWorldPosition(new THREE.Vector3());
           const worldRot   = container.object3D.rotation;
           const worldScale = container.object3D.getWorldScale(new THREE.Vector3());
 
-          container.setAttribute('visible', 'false');
+          removeContainer(container); // remove this bubble so it stops rising
 
           // Split GLB that fades out via bubble-fade component
           const split = document.createElement('a-entity');
@@ -263,24 +351,28 @@ AFRAME.registerComponent('force-phong', {
             txt.emit('fade-out');
           }, 5000);
 
-          // clean up and spawn next bubble
+          // clean up split + text
           setTimeout(() => {
-            if (rig.contains(txt)) rig.removeChild(txt);
+            if (rig.contains(txt))   rig.removeChild(txt);
             if (rig.contains(split)) rig.removeChild(split);
-            if (rig.contains(container)) rig.removeChild(container);
-
-            currentIndex++;
-            spawnBubble();
           }, 13000);
         });
+
+        rig.appendChild(container);
+        activeContainers.push(container);
       }
 
-      // kick off the first bubble
-      spawnBubble();
+      // maintain 4–5 rising bubbles on a loop endlessly
+      setInterval(() => {
+        spawnBubble();
+      }, SPAWN_INTERVAL);
+
+      // seed initial bubbles
+      for (let i = 0; i < MAX_BUBBLES; i++) {
+        spawnBubble();
+      }
     });
   </script>
-
-
 </head>
 
 <body>
