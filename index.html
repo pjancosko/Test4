@@ -13,6 +13,44 @@
   </style>
 
 <script>
+
+//FORCE PHONG//------------------------------------
+  AFRAME.registerComponent('force-phong', {
+    schema: {
+      shininess:   { default: 180 },
+      baseOpacity: { default: 0.08 }
+    },
+    init () {
+      this.el.addEventListener('model-loaded', () => {
+        const obj = this.el.getObject3D('mesh');
+        if (!obj) return;
+
+        obj.traverse(n => {
+          if (!n.isMesh || !n.material) return;
+
+          const base = n.material;
+          const phong = new THREE.MeshPhongMaterial({
+            color:       0x222244,
+            emissive:    0x060a2e,
+            specular:    0xffffff,
+            shininess:   this.data.shininess,
+            transparent: true,
+            opacity:     (typeof base.opacity === 'number')
+                           ? base.opacity
+                           : this.data.baseOpacity,
+            side:        THREE.DoubleSide,
+            depthWrite:  false
+          });
+
+          if (base.map)       phong.map       = base.map;
+          if (base.normalMap) phong.normalMap = base.normalMap;
+
+          n.material = phong;
+          n.material.needsUpdate = true;
+        });
+      });
+    }
+  });
 AFRAME.registerComponent('random-bubble-ring', {
   schema: {
     count:        { default: 8 },
