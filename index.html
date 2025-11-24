@@ -14,7 +14,7 @@
   <style>body{margin:0;overflow:hidden}</style>
 
   <script>
-    // -------- OPTIMIZED Webcam Bubble (shared texture, lower poly) --------
+    // -------- Shared Webcam Texture --------
     let sharedVideoTexture = null;
     let sharedVideoElement = null;
 
@@ -23,15 +23,12 @@
         radius: { type: 'number', default: 0.25 }
       },
       init: function () {
-        this.mesh = null;
-        
         const self = this;
         function waitForVideo() {
           if (!sharedVideoElement) {
             const video = document.querySelector('video');
             if (video && video.readyState >= 2) {
               sharedVideoElement = video;
-              // Create ONE shared texture for all bubbles
               if (!sharedVideoTexture) {
                 const THREE = window.THREE;
                 sharedVideoTexture = new THREE.VideoTexture(sharedVideoElement);
@@ -49,63 +46,33 @@
         }
         waitForVideo();
       },
-
       createBubble: function () {
         const THREE = window.THREE;
         if (!THREE || !sharedVideoTexture) return;
 
-        // Clean up previous mesh
-        if (this.mesh) {
-          this.el.removeObject3D('mesh');
-          if (this.mesh.geometry) this.mesh.geometry.dispose();
-          if (this.mesh.material) this.mesh.material.dispose();
-          this.mesh = null;
-        }
-
-        // REDUCED polygon count: 16x16 instead of 32x32
+        // Slightly lower geometry segments for performance
         const geom = new THREE.SphereGeometry(this.data.radius, 16, 16);
         const mat = new THREE.MeshBasicMaterial({
-          map: sharedVideoTexture,  // Use shared texture
+          map: sharedVideoTexture,
           transparent: true,
-          opacity: 0.2,  // Slightly reduced opacity for better performance
+          opacity: 0.25,
           side: THREE.BackSide,
           depthWrite: false,
           depthTest: true
         });
 
-        this.mesh = new THREE.Mesh(geom, mat);
-        this.mesh.renderOrder = 2;
-        
-        // Enable frustum culling
-        this.mesh.frustumCulled = true;
-        
-        this.el.setObject3D('mesh', this.mesh);
-      },
-
-      update: function (oldData) {
-        if (!oldData) return;
-        if (oldData.radius !== this.data.radius && sharedVideoTexture) {
-          this.createBubble();
-        }
-      },
-
-      remove: function () {
-        if (this.mesh) {
-          this.el.removeObject3D('mesh');
-          if (this.mesh.geometry) this.mesh.geometry.dispose();
-          if (this.mesh.material) this.mesh.material.dispose();
-          this.mesh = null;
-        }
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.renderOrder = 2;
+        this.el.setObject3D('mesh', mesh);
       }
     });
 
-    // ---- SIMPLIFIED Force Phong ----
     AFRAME.registerComponent('force-phong', {
       schema: {
-        shininess: { default: 100 }, // Reduced from 180
+        shininess: { default: 180 },
         baseOpacity: { default: 0.08 }
       },
-      init() {
+      init () {
         this.el.addEventListener('model-loaded', () => {
           const obj = this.el.getObject3D('mesh');
           if (!obj) return;
@@ -114,25 +81,30 @@
             if (!n.isMesh || !n.material) return;
 
             const base = n.material;
-            // Use MeshLambertMaterial instead of Phong for better performance
-            const lambert = new THREE.MeshLambertMaterial({
+            const phong = new THREE.MeshPhongMaterial({
               color: 0x222244,
               emissive: 0x060a2e,
+              specular: 0xffffff,
+              shininess: this.data.shininess,
               transparent: true,
-              opacity: (typeof base.opacity === 'number') ? base.opacity : this.data.baseOpacity,
+              opacity: (typeof base.opacity === 'number')
+                         ? base.opacity
+                         : this.data.baseOpacity,
               side: THREE.DoubleSide,
               depthWrite: false
             });
 
-            if (base.map) lambert.map = base.map;
-            n.material = lambert;
+            if (base.map) phong.map = base.map;
+            if (base.normalMap) phong.normalMap = base.normalMap;
+
+            n.material = phong;
             n.material.needsUpdate = true;
           });
         });
       }
     });
 
-    // ------------------ Optimized Bubble Fade ------------------
+    // ------------------ Bubble Fade ------------------
     AFRAME.registerComponent('bubble-fade', {
       schema: {
         from: { type: 'number', default: 0.07 },
@@ -140,11 +112,10 @@
         dur: { type: 'number', default: 8000 },
         delay: { type: 'number', default: 4000 }
       },
-      init() {
+      init () {
         this.materials = [];
         this.startTime = null;
         this.isAnimating = false;
-        this.lastUpdate = 0;
 
         this.el.addEventListener('model-loaded', () => {
           const obj = this.el.getObject3D('mesh');
@@ -163,15 +134,9 @@
           }, this.data.delay);
         });
       },
-      tick() {
+      tick () {
         if (!this.isAnimating || !this.startTime) return;
-        
-        // Throttle updates to 30fps
-        const now = performance.now();
-        if (now - this.lastUpdate < 33) return;
-        this.lastUpdate = now;
-        
-        const elapsed = now - this.startTime;
+        const elapsed = performance.now() - this.startTime;
         const progress = Math.min(elapsed / this.data.dur, 1);
         const newOp = this.data.from * (1 - progress) + this.data.to * progress;
 
@@ -199,18 +164,26 @@
       { text: "comfort" },
       { text: "or bursting" },
       { text: "learning" },
-      { text: "growing" },
+      { text: "growing" }
     ];
 
-    // ------------------ OPTIMIZED Bubble Logic ------------------
+    // ------------------ Multiple Bubbles with Sequential Text ------------------
     window.addEventListener('DOMContentLoaded', () => {
       const rig = document.querySelector('#rig');
-      const MAX_BUBBLES = 3;      // REDUCED from 5 to 3
-      const SPAWN_INTERVAL = 3000; // INCREASED from 2000ms
+      const MAX_BUBBLES = 3;
+      const SPAWN_INTERVAL = 3000;
 
-      let currentIndex = 0;
+      // ---- Mobile-aware sizing so bubbles are visible on phones ----
+      const IS_MOBILE = AFRAME.utils && AFRAME.utils.device
+        ? AFRAME.utils.device.isMobile()
+        : /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+      const BUBBLE_SCALE = IS_MOBILE ? 3.2 : 2.2;   // scale up more on phones
+      const CLICK_RADIUS = IS_MOBILE ? 0.45 : 0.35; // easier to tap on phones
+
+      let currentTextIndex = 0;  // Which poem text to show next
       let activeContainers = [];
-      let isProcessingClick = false; // Debounce clicks
+      let poemComplete = false;
 
       function removeContainer(container) {
         activeContainers = activeContainers.filter(c => c !== container);
@@ -219,17 +192,24 @@
         }
       }
 
+      // Spawn closer to camera and nearer center so bubbles stay in view
       function randomBubbleStartPosition() {
-        const radius = 1 + Math.random() * 0.7;
-        const angle = (Math.random() - 0.5) * Math.PI / 3;
-        const x = Math.sin(angle) * radius;
-        const z = -Math.cos(angle) * radius;
-        const y = -0.6 + Math.random() * 0.2;
+        const xRange = IS_MOBILE ? 0.35 : 0.6;   // narrower horizontally on phones
+        const zNear = IS_MOBILE ? -0.9 : -1.2;
+        const zFar  = IS_MOBILE ? -0.7 : -1.0;
+        const yMin  = IS_MOBILE ? -0.1 : -0.4;
+        const yMax  = IS_MOBILE ?  0.25 :  0.1;
+
+        const x = (Math.random() * 2 - 1) * xRange;
+        const z = zNear + Math.random() * (zFar - zNear);
+        const y = yMin + Math.random() * (yMax - yMin);
+
         return { x, y, z };
       }
 
       function spawnBubble() {
         if (activeContainers.length >= MAX_BUBBLES) return;
+        if (poemComplete && currentTextIndex >= POEM.length) return;
 
         const container = document.createElement('a-entity');
         const startPos = randomBubbleStartPosition();
@@ -240,13 +220,13 @@
         container.setAttribute('position', `${startPos.x} ${startY} ${startPos.z}`);
         container.setAttribute('rotation',
           `${15 + (Math.random()*10-5)} ${15 + (Math.random()*20-10)} ${15 + (Math.random()*10-5)}`);
-        container.setAttribute('scale', '2 2 2');
+        container.setAttribute('scale', `${BUBBLE_SCALE} ${BUBBLE_SCALE} ${BUBBLE_SCALE}`);
 
-        const riseDur = 20000 + Math.random() * 5000; // SLOWER rise: 20-25s
+        const riseDur = 18000 + Math.random() * 7000;
 
         container.setAttribute(
           'animation__rise',
-          `property: position; dur: ${riseDur}; easing: linear; to: ${startPos.x} ${endY} ${startPos.z}`
+          `property: position; dur: ${riseDur}; easing: easeInOutSine; to: ${startPos.x} ${endY} ${startPos.z}`
         );
 
         container.addEventListener('animationcomplete__rise', () => {
@@ -258,7 +238,7 @@
         // Inner wobble GLB
         const model = document.createElement('a-entity');
         model.setAttribute('gltf-model', '#myModel');
-        model.setAttribute('force-phong', 'shininess:100');
+        model.setAttribute('force-phong', 'shininess:400');
         model.setAttribute('animation-mixer', 'loop: repeat');
         model.setAttribute('position', '0 0 0');
         container.appendChild(model);
@@ -268,42 +248,45 @@
         webcamShell.setAttribute('position', '0 0 0');
 
         model.addEventListener('model-loaded', () => {
-          const THREE = window.THREE;
           const obj = model.getObject3D('mesh');
-          if (!obj || !THREE) return;
+          if (!obj) return;
 
           const box = new THREE.Box3().setFromObject(obj);
           const size = new THREE.Vector3();
           box.getSize(size);
 
-          const wobbleRadiusWorld = Math.max(size.x, size.y, size.z) / 2;
-          const containerScale = container.object3D.getWorldScale(new THREE.Vector3());
-          const maxScale = Math.max(containerScale.x, containerScale.y, containerScale.z) || 1;
-          const wobbleRadiusLocal = wobbleRadiusWorld / maxScale;
-          const shellRadiusLocal = wobbleRadiusLocal * 0.5;
+          const wobbleRadius = Math.max(size.x, size.y, size.z) / 2;
+          const shellRadius = wobbleRadius * 0.75;  // keep your 0.75 relationship
 
-          webcamShell.setAttribute('webcam-bubble', `radius:${shellRadiusLocal}`);
+          webcamShell.setAttribute('webcam-bubble', `radius:${shellRadius}`);
         });
 
         container.appendChild(webcamShell);
 
         // Click helper
         const clickSphere = document.createElement('a-sphere');
-        clickSphere.setAttribute('radius', '0.35');
+        clickSphere.setAttribute('radius', CLICK_RADIUS.toString());
         clickSphere.setAttribute('material', 'opacity:0; transparent:true');
         clickSphere.classList.add('clickable');
         container.appendChild(clickSphere);
 
-        // Click handler with debounce
+        // Click handler
+        let clicked = false;
         container.addEventListener('click', () => {
-          if (isProcessingClick) return;
-          isProcessingClick = true;
-          setTimeout(() => { isProcessingClick = false; }, 500);
+          if (clicked) return;
+          if (currentTextIndex >= POEM.length) {
+            // Poem complete, just pop bubble without text
+            clicked = true;
+            removeContainer(container);
+            return;
+          }
+          clicked = true;
 
-          const stanza = POEM[currentIndex];
-          currentIndex = (currentIndex + 1) % POEM.length;
+          const stanza = POEM[currentTextIndex];
+          currentTextIndex++;
 
-          const THREE = window.THREE;
+          console.log(`💥 Showing text ${currentTextIndex}/${POEM.length}: "${stanza.text}"`);
+
           const worldPos = container.object3D.getWorldPosition(new THREE.Vector3());
           const worldRot = container.object3D.rotation;
           const worldScale = container.object3D.getWorldScale(new THREE.Vector3());
@@ -319,7 +302,7 @@
             `${worldRot.x * 180/Math.PI} ${worldRot.y * 180/Math.PI} ${worldRot.z * 180/Math.PI}`);
           split.setAttribute('scale',
             `${worldScale.x} ${worldScale.y} ${worldScale.z}`);
-          split.setAttribute('force-phong', 'shininess:100');
+          split.setAttribute('force-phong', 'shininess:800');
           split.setAttribute('bubble-fade',
             'from:0.07; to:0; dur:8000; delay:4000');
           split.setAttribute('animation-mixer',
@@ -336,12 +319,12 @@
             value: stanza.text,
             color: '#A8DBE6',
             align: 'center',
-            width: 0.8,
-            font: 'kelsonsans' // Use simpler font
+            width: 1.5,
+            font: 'kelsonsans'
           });
-          txt.setAttribute('material', 'transparent:true; opacity:1; depthTest:false');
+          txt.setAttribute('material', 'transparent:true; opacity:1');
           txt.setAttribute('position',
-            `${worldPos.x} ${worldPos.y} ${worldPos.z + 0.4}`);
+            `${worldPos.x} ${worldPos.y + 0.2} ${worldPos.z + 0.4}`);
           txt.setAttribute('look-at', '[camera]');
           txt.setAttribute(
             'animation__fadeout',
@@ -351,37 +334,40 @@
 
           setTimeout(() => {
             txt.emit('fade-out');
-          }, 5000);
+          }, 3000);
 
           setTimeout(() => {
             if (rig.contains(txt)) rig.removeChild(txt);
             if (rig.contains(split)) rig.removeChild(split);
-          }, 13000);
+          }, 10000);
+
+          // Check if poem is complete
+          if (currentTextIndex >= POEM.length) {
+            poemComplete = true;
+            console.log('🎉 Poem complete! Waiting for remaining bubbles to clear...');
+
+            // After all text shown, wait then restart
+            setTimeout(() => {
+              console.log('🔄 Restarting poem sequence...');
+              currentTextIndex = 0;
+              poemComplete = false;
+            }, 20000);
+          }
         });
 
         rig.appendChild(container);
         activeContainers.push(container);
       }
 
-      // Spawn bubbles on interval
+      // Continuous spawning
       setInterval(() => {
         spawnBubble();
       }, SPAWN_INTERVAL);
 
-      // Initial bubbles with staggered spawn
-      setTimeout(() => spawnBubble(), 0);
-      setTimeout(() => spawnBubble(), 1000);
+      // Initial bubbles
+      setTimeout(() => spawnBubble(), 500);
       setTimeout(() => spawnBubble(), 2000);
-    });
-
-    // Preload models
-    window.addEventListener('load', () => {
-      const loader = new THREE.GLTFLoader();
-      ['wobble5.glb', 'BubbleSplit.glb'].forEach(url => {
-        loader.load(url, () => {
-          console.log(`Preloaded ${url}`);
-        });
-      });
+      setTimeout(() => spawnBubble(), 3500);
     });
   </script>
 </head>
@@ -390,11 +376,11 @@
   <a-scene
     embedded
     vr-mode-ui="enabled:false"
-    renderer="antialias:true;logarithmicDepthBuffer:true;colorManagement:true;toneMapping:linear;exposure:1.5"
+    renderer="physicallyCorrectLights:true;antialias:true;logarithmicDepthBuffer:true;colorManagement:true;toneMapping:ACESFilmic;exposure:1.9"
     arjs="sourceType:webcam;trackingMethod:best;debugUIEnabled:false">
 
-    <!-- Assets with preload -->
-    <a-assets timeout="30000">
+    <!-- Assets -->
+    <a-assets timeout="60000">
       <a-asset-item id="myModel" src="wobble5.glb"></a-asset-item>
       <a-asset-item id="mySplit" src="BubbleSplit.glb"></a-asset-item>
     </a-assets>
@@ -402,12 +388,15 @@
     <!-- AR Camera with rig -->
     <a-entity camera arjs-camera id="arCam">
       <a-entity id="rig">
-        <!-- SIMPLIFIED Lights (reduced from 5 to 3) -->
-        <a-entity light="type:ambient; intensity:8; color:#FA7AAE"></a-entity>
+        <!-- Lights -->
+        <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
         <a-entity position="1 2 -1"
-                  light="type:directional; intensity:6; color:#8BFCFC"></a-entity>
-        <a-entity position="0 1 0"
-                  light="type:point; intensity:8; distance:3; color:#FFFFFF"></a-entity>
+                  light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
+        <a-entity position="-2 2 1"
+                  light="type:directional; intensity:8; color:#E65E63"></a-entity>
+        <a-entity position="0.5 0.6 -0.8"
+                  light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
+        <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
       </a-entity>
     </a-entity>
 
