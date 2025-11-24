@@ -2,183 +2,215 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Bubble Sculpture - Interactive Popping</title>
+  <title>Bubble Sculpture (Spinning Rings, Medium Size)</title>
 
   <!-- A-Frame + AR.js -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+  <!-- For animation-mixer on BubbleSplit.glb -->
+  <script src="https://rawgit.com/donmccurdy/aframe-extras/v6.0.0/dist/aframe-extras.loaders.min.js"></script>
 
   <style>
     body { margin: 0; overflow: hidden; }
   </style>
 
-<script>
+  <script>
+    // --------- Your force-phong component ---------- 
+    AFRAME.registerComponent('force-phong', {
+      schema: {
+        shininess:   { default: 180 },
+        baseOpacity: { default: 0.08 }
+      },
+      init () {
+        this.el.addEventListener('model-loaded', () => {
+          const obj = this.el.getObject3D('mesh');
+          if (!obj) return;
 
-//FORCE PHONG//------------------------------------
-AFRAME.registerComponent('force-phong', {
-  schema: {
-    shininess:   { default: 180 },
-    baseOpacity: { default: 0.08 }
-  },
-  init () {
-    this.el.addEventListener('model-loaded', () => {
-      const obj = this.el.getObject3D('mesh');
-      if (!obj) return;
+          obj.traverse(n => {
+            if (!n.isMesh || !n.material) return;
 
-      obj.traverse(n => {
-        if (!n.isMesh || !n.material) return;
+            const base = n.material;
+            const phong = new THREE.MeshPhongMaterial({
+              color:       0x222244,
+              emissive:    0x060a2e,
+              specular:    0xffffff,
+              shininess:   this.data.shininess,
+              transparent: true,
+              opacity:     (typeof base.opacity === 'number')
+                             ? base.opacity
+                             : this.data.baseOpacity,
+              side:        THREE.DoubleSide,
+              depthWrite:  false
+            });
 
-        const base = n.material;
-        const phong = new THREE.MeshPhongMaterial({
-          color:       0x222244,
-          emissive:    0x060a2e,
-          specular:    0xffffff,
-          shininess:   this.data.shininess,
-          transparent: true,
-          opacity:     (typeof base.opacity === 'number')
-                         ? base.opacity
-                         : this.data.baseOpacity,
-          side:        THREE.DoubleSide,
-          depthWrite:  false
+            if (base.map)       phong.map       = base.map;
+            if (base.normalMap) phong.normalMap = base.normalMap;
+
+            n.material = phong;
+            n.material.needsUpdate = true;
+          });
+        });
+      }
+    });
+
+    // --------- Fade-out component for BubbleSplit ---------- 
+    AFRAME.registerComponent('fade-out', {
+      schema: {
+        delay:    { default: 2500 },  // ms before fade starts
+        duration: { default: 1500 },  // ms for full fade
+        remove:   { default: true }   // remove entity at end
+      },
+      init() {
+        this.startTime = null;
+      },
+      tick(time, delta) {
+        if (this.startTime === null) {
+          this.startTime = time;
+        }
+
+        const d = this.data;
+        const elapsed = time - this.startTime;
+
+        if (elapsed < d.delay) return;
+
+        const t = Math.min(1, (elapsed - d.delay) / d.duration);
+        const alpha = 1 - t;
+
+        const obj = this.el.getObject3D('mesh');
+        if (!obj) return;
+
+        obj.traverse(n => {
+          if (n.isMesh && n.material) {
+            const mats = Array.isArray(n.material) ? n.material : [n.material];
+            mats.forEach(m => {
+              m.transparent = true;
+              m.opacity = alpha;
+              m.needsUpdate = true;
+            });
+          }
         });
 
-        if (base.map)       phong.map       = base.map;
-        if (base.normalMap) phong.normalMap = base.normalMap;
-
-        n.material = phong;
-        n.material.needsUpdate = true;
-      });
+        if (t >= 1 && d.remove && this.el.parentNode) {
+          this.el.parentNode.removeChild(this.el);
+        }
+      }
     });
-  }
-});
 
-//BUBBLE POP COMPONENT//------------------------------------
-AFRAME.registerComponent('bubble-pop', {
-  schema: {
-    popDuration: { default: 3000 }, // Total duration before removal (3 seconds)
-    fadeDelay: { default: 2500 },   // Start fade after 2.5 seconds
-    fadeDuration: { default: 500 }, // Fade for 0.5 seconds
-    autoRemove: { default: true }    // Auto-remove after animation
-  },
-  
-  init: function() {
-    const el = this.el;
-    const data = this.data;
-    
-    // Add cursor raycast class for detection
-    el.classList.add('clickable');
-    
-    // Store original scale for pop animation
-    this.originalScale = el.getAttribute('scale');
-    
-    // Handle click/tap
-    el.addEventListener('click', (evt) => {
-      this.popBubble();
+    // --------- Bubble-pop: swap to BubbleSplit + fade ---------- 
+    AFRAME.registerComponent('bubble-pop', {
+      schema: {
+        popDuration:  { default: 5000 }, // total life after click (ms)
+        fadeDuration: { default: 2000 }, // how long the fade lasts (ms)
+        autoRemove:   { default: true }
+      },
+      
+      init: function() {
+        const el = this.el;
+        el.classList.add('clickable');
+        this.popped = false;
+
+        this.handleInteract = this.popBubble.bind(this);
+        el.addEventListener('click', this.handleInteract);
+        el.addEventListener('touchstart', this.handleInteract);
+      },
+      
+      popBubble: function() {
+        if (this.popped) return;
+        this.popped = true;
+
+        const el   = this.el;
+        const data = this.data;
+
+        const pos   = el.getAttribute('position');
+        const rot   = el.getAttribute('rotation');
+        const scale = el.getAttribute('scale');
+
+        // swap to split model at same transform
+        el.setAttribute('gltf-model', '#bubbleSplitModel');
+        el.setAttribute('position', pos);
+        el.setAttribute('rotation', rot);
+        el.setAttribute('scale', scale);
+
+        // play split animation once, hold last frame
+        el.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
+
+        // no scale-up animation (you asked for none)
+
+        // fade during the last part of popDuration
+        const fadeDelay = Math.max(0, data.popDuration - data.fadeDuration);
+        el.setAttribute(
+          'fade-out',
+          `delay: ${fadeDelay}; duration: ${data.fadeDuration}; remove: ${data.autoRemove}`
+        );
+      },
+
+      remove: function() {
+        const el = this.el;
+        el.removeEventListener('click', this.handleInteract);
+        el.removeEventListener('touchstart', this.handleInteract);
+      }
     });
-    
-    // Also handle touch for mobile AR
-    el.addEventListener('touchstart', (evt) => {
-      this.popBubble();
+
+    // --------- More organic random bubble ring ---------- 
+    AFRAME.registerComponent('random-bubble-ring', {
+      schema: {
+        count:        { default: 8 },    // how many bubbles in this ring
+        radius:       { default: 5 },    // base radius of ring
+        y:            { default: 0 },    // base vertical offset
+        scale:        { default: 9 },    // base scale
+
+        radiusJitter: { default: 1.0 },  // in/out variation
+        heightJitter: { default: 1.0 },  // up/down variation
+        depthJitter:  { default: 1.2 },  // toward/away from camera
+        scaleJitter:  { default: 0.9 }   // scale factor variation
+      },
+
+      init() {
+        const data = this.data;
+
+        for (let i = 0; i < data.count; i++) {
+          const angle = (i / data.count) * Math.PI * 2;
+
+          // --- distance from center (radius) with jitter ---
+          const radialOffset = (Math.random() - 0.5) * data.radiusJitter;
+          const r = data.radius + radialOffset;
+
+          // base x/z on the ring
+          let x = Math.cos(angle) * r;
+          let z = Math.sin(angle) * r;
+
+          // --- extra depth jitter (toward/away from camera) ---
+          const depthOffset = (Math.random() - 0.5) * data.depthJitter;
+          z += depthOffset;
+
+          // --- vertical jitter (up/down) ---
+          const y = data.y + (Math.random() - 0.5) * data.heightJitter;
+
+          // --- scale jitter ---
+          const scaleFactor = 1 - data.scaleJitter / 2 + Math.random() * data.scaleJitter;
+          const finalScale = data.scale * scaleFactor;   // ✅ defined!
+
+          const bubble = document.createElement('a-entity');
+          bubble.setAttribute('gltf-model', '#bubbleModel');
+          bubble.setAttribute('force-phong', '');
+          bubble.setAttribute('bubble-pop', ''); // clickable pop
+          bubble.setAttribute('position', `${x} ${y} ${z}`);
+          bubble.setAttribute('scale', `${finalScale} ${finalScale} ${finalScale}`);
+
+          // Invisible hit sphere to make clicks easier
+          bubble.setAttribute('geometry', `primitive: sphere; radius: ${finalScale * 0.7}`);
+          bubble.setAttribute('material', 'opacity: 0; transparent: true; color: #ffffff; shader: flat');
+
+          bubble.setAttribute(
+            'rotation',
+            `${(Math.random() - 0.5) * 20} ${(Math.random()*360).toFixed(1)} ${(Math.random() - 0.5) * 20}`
+          );
+
+          this.el.appendChild(bubble);
+        }
+      }
     });
-  },
-  
-  popBubble: function() {
-    const el = this.el;
-    const data = this.data;
-    
-    // Prevent multiple pops
-    if (this.popped) return;
-    this.popped = true;
-    
-    // Get current scale
-    const currentScale = el.getAttribute('scale');
-    
-    // Replace model with split animation
-    el.removeAttribute('gltf-model');
-    el.setAttribute('gltf-model', '#bubbleSplitModel');
-    
-    // Keep the exact same scale - no scaling animation
-    el.setAttribute('scale', currentScale);
-    
-    // Only fade at the very end
-    el.setAttribute('animation__pop-fade', {
-      property: 'visible',
-      to: false,
-      delay: data.fadeDelay,
-      dur: data.fadeDuration
-    });
-    
-    // Remove element after animation if configured
-    if (data.autoRemove) {
-      setTimeout(() => {
-        el.parentNode.removeChild(el);
-      }, data.popDuration);
-    }
-  }
-});
-
-//RANDOM BUBBLE RING COMPONENT//------------------------------------
-AFRAME.registerComponent('random-bubble-ring', {
-  schema: {
-    count:        { default: 8 },
-    radius:       { default: 5 },
-    y:            { default: 0 },
-    baseScale:    { default: 9 },
-
-    radiusJitter: { default: 1.0 },
-    heightJitter: { default: 1.0 },
-    depthJitter:  { default: 1.2 },
-
-    minScale:     { default: 0.5 },
-    maxScale:     { default: 4.0 },
-    curve:        { default: 3.0 }
-  },
-
-  init() {
-    const d = this.data;
-
-    for (let i = 0; i < d.count; i++) {
-      const angle = (i / d.count) * Math.PI * 2;
-
-      // radius jitter
-      const r = d.radius + (Math.random() - 0.5) * d.radiusJitter;
-      let x = Math.cos(angle) * r;
-      let z = Math.sin(angle) * r;
-
-      // depth jitter
-      z += (Math.random() - 0.5) * d.depthJitter;
-
-      // height jitter
-      const y = d.y + (Math.random() - 0.5) * d.heightJitter;
-
-      // NON-LINEAR GIANT BUBBLE SCALE
-      const t = Math.random();
-      const bias = Math.pow(t, d.curve);
-      const scaleMult = d.minScale + bias * (d.maxScale - d.minScale);
-
-      const finalScale = d.baseScale * scaleMult;
-
-      const bubble = document.createElement('a-entity');
-      bubble.setAttribute('gltf-model', '#bubbleModel');
-      bubble.setAttribute('force-phong', '');
-      bubble.setAttribute('bubble-pop', ''); // Add pop functionality
-      // Mark as clickable immediately so the scene raycaster can hit it
-      // even before model-loaded or other async events complete.
-      bubble.classList.add('clickable');
-      bubble.setAttribute('position', `${x} ${y} ${z}`);
-      bubble.setAttribute('scale', `${finalScale} ${finalScale} ${finalScale}`);
-
-      bubble.setAttribute('rotation',
-        `${(Math.random() - 0.5) * 20} ${(Math.random()*360).toFixed(1)} ${(Math.random() - 0.5) * 20}`
-      );
-
-      this.el.appendChild(bubble);
-    }
-  }
-});
-
-</script>
-
+  </script>
 </head>
 
 <body>
@@ -186,22 +218,13 @@ AFRAME.registerComponent('random-bubble-ring', {
     embedded
     vr-mode-ui="enabled:false"
     renderer="logarithmicDepthBuffer:true;antialias:true;colorManagement:true;physicallyCorrectLights:true;toneMapping:ACESFilmic;exposure:1.9"
-    arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled:false"
-    cursor="rayOrigin: mouse">
+    arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled:false">
 
-    <!-- Camera (keep default look-controls) -->
-    <a-camera></a-camera>
-
-    <!-- Mouse/tap cursor: use rayOrigin: mouse and a hidden geometry so
-         the raycaster consistently intersects glTF meshes. Keeps cursor
-         invisible via material opacity but provides a geometry for
-         consistent behavior across browsers. -->
-    <a-entity id="mouse-cursor"
-          cursor="rayOrigin: mouse; fuse: false"
-          raycaster="objects: .clickable; far: 100"
-          geometry="primitive: sphere; radius: 0.001"
-          material="opacity: 0; transparent: true">
-    </a-entity>
+    <!-- Camera: invisible mouse/touch ray, no visible cursor -->
+    <a-camera
+      cursor="rayOrigin: mouse; fuse: false"
+      raycaster="objects: .clickable; far: 100">
+    </a-camera>
 
     <!-- Assets -->
     <a-assets timeout="60000">
@@ -209,7 +232,7 @@ AFRAME.registerComponent('random-bubble-ring', {
       <a-asset-item id="bubbleSplitModel" src="BubbleSplit.glb"></a-asset-item>
     </a-assets>
 
-    <!-- Lights -->
+    <!-- Your lights -->
     <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
 
     <a-entity position="1 2 -1"
@@ -223,47 +246,46 @@ AFRAME.registerComponent('random-bubble-ring', {
 
     <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
 
-    <!-- Floating + spinning bubble sculpture -->
+    <!-- Floating + spinning bubble sculpture (medium size) -->
     <a-entity
       id="bubble-sculpture"
       position="0 -0.5 -6"
       scale="1 1 1"
       animation__float="property: position.y; from:-0.8; to:0.8; dur:14000; dir:alternate; loop:true; easing:easeInOutSine">
 
-      <!-- Center bubble with pop functionality -->
+      <!-- Center bubble: clickable, with invisible big hit sphere -->
       <a-entity gltf-model="#bubbleModel"
                 force-phong
                 bubble-pop
                 class="clickable"
                 position="0 0 0"
-                scale="15 15 15">
+                scale="15 15 15"
+                geometry="primitive: sphere; radius: 10"
+                material="opacity: 0; transparent: true; color: #ffffff; shader: flat">
       </a-entity>
 
-      <!-- Outer ring -->
+      <!-- Outer ring: looser, bigger variation -->
       <a-entity
         id="ring-outer"
         animation__spin="property: rotation.y; to:360; loop:true; dur:50000; easing:linear"
-        random-bubble-ring="count:10; radius:3; y:0; baseScale:6;
-                          radiusJitter:1.5; heightJitter:1.2; depthJitter:1.5;
-                          minScale:0.5; maxScale:4.0; curve:3.0">
+        random-bubble-ring="count:10; radius:3; y:0; scale:6;
+                            radiusJitter:1.5; heightJitter:1.2; depthJitter:1.5; scaleJitter:0.8">
       </a-entity>
 
-      <!-- Upper ring -->
+      <!-- Upper ring: tighter cluster, smaller jitter -->
       <a-entity
         id="ring-upper"
         animation__spin="property: rotation.y; to:-360; loop:true; dur:60000; easing:linear"
-        random-bubble-ring="count:8; radius:2.6; y:2.0; baseScale:6;
-                          radiusJitter:0.8; heightJitter:0.8; depthJitter:1.0;
-                          minScale:0.5; maxScale:4.0; curve:3.0">
+        random-bubble-ring="count:8; radius:2.6; y:2.0; scale:6;
+                            radiusJitter:0.8; heightJitter:0.8; depthJitter:1.0; scaleJitter:0.4">
       </a-entity>
 
-      <!-- Lower ring -->
+      <!-- Lower ring: medium looseness -->
       <a-entity
         id="ring-lower"
         animation__spin="property: rotation.y; to:360; loop:true; dur:55000; easing:linear"
-        random-bubble-ring="count:8; radius:2.4; y:-2.0; baseScale:6;
-                          radiusJitter:1.0; heightJitter:1.0; depthJitter:1.3;
-                          minScale:0.5; maxScale:4.0; curve:3.0">
+        random-bubble-ring="count:8; radius:2.4; y:-2.0; scale:6;
+                            radiusJitter:1.0; heightJitter:1.0; depthJitter:1.3; scaleJitter:0.6">
       </a-entity>
 
     </a-entity>
