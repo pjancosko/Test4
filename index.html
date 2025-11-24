@@ -12,102 +12,65 @@
     body { margin: 0; overflow: hidden; }
   </style>
 
- <script>
-  // --------- Your force-phong component ---------- 
-  AFRAME.registerComponent('force-phong', {
-    schema: {
-      shininess:   { default: 180 },
-      baseOpacity: { default: 0.08 }
-    },
-    init () {
-      this.el.addEventListener('model-loaded', () => {
-        const obj = this.el.getObject3D('mesh');
-        if (!obj) return;
+<script>
+AFRAME.registerComponent('random-bubble-ring', {
+  schema: {
+    count:        { default: 8 },
+    radius:       { default: 5 },
+    y:            { default: 0 },
+    baseScale:    { default: 9 },
 
-        obj.traverse(n => {
-          if (!n.isMesh || !n.material) return;
+    radiusJitter: { default: 1.0 },
+    heightJitter: { default: 1.0 },
+    depthJitter:  { default: 1.2 },
 
-          const base = n.material;
-          const phong = new THREE.MeshPhongMaterial({
-            color:       0x222244,
-            emissive:    0x060a2e,
-            specular:    0xffffff,
-            shininess:   this.data.shininess,
-            transparent: true,
-            opacity:     (typeof base.opacity === 'number')
-                           ? base.opacity
-                           : this.data.baseOpacity,
-            side:        THREE.DoubleSide,
-            depthWrite:  false
-          });
+    minScale:     { default: 0.5 },  // 50% of base
+    maxScale:     { default: 4.0 },  // 4× base (this makes some HUGE)
+    curve:        { default: 3.0 }   // higher = fewer but bigger giants
+  },
 
-          if (base.map)       phong.map       = base.map;
-          if (base.normalMap) phong.normalMap = base.normalMap;
+  init() {
+    const d = this.data;
 
-          n.material = phong;
-          n.material.needsUpdate = true;
-        });
-      });
+    for (let i = 0; i < d.count; i++) {
+      const angle = (i / d.count) * Math.PI * 2;
+
+      // radius jitter
+      const r = d.radius + (Math.random() - 0.5) * d.radiusJitter;
+      let x = Math.cos(angle) * r;
+      let z = Math.sin(angle) * r;
+
+      // depth jitter
+      z += (Math.random() - 0.5) * d.depthJitter;
+
+      // height jitter
+      const y = d.y + (Math.random() - 0.5) * d.heightJitter;
+
+      // ----------- NON-LINEAR GIANT BUBBLE SCALE -----------
+      // random number biased toward small, but sometimes huge
+      const t = Math.random();
+      const bias = Math.pow(t, d.curve);   // exponential falloff
+      const scaleMult = d.minScale + bias * (d.maxScale - d.minScale);
+
+      const finalScale = d.baseScale * scaleMult;
+      // -------------------------------------------------------
+
+      const bubble = document.createElement('a-entity');
+      bubble.setAttribute('gltf-model', '#bubbleModel');
+      bubble.setAttribute('force-phong', '');
+      bubble.setAttribute('position', `${x} ${y} ${z}`);
+      bubble.setAttribute('scale', `${finalScale} ${finalScale} ${finalScale}`);
+
+      bubble.setAttribute('rotation',
+        `${(Math.random() - 0.5) * 20} ${(Math.random()*360).toFixed(1)} ${(Math.random() - 0.5) * 20}`
+      );
+
+      this.el.appendChild(bubble);
     }
-  });
-
-  // --------- More organic random bubble ring ---------- 
-  AFRAME.registerComponent('random-bubble-ring', {
-    schema: {
-      count:        { default: 8 },    // how many bubbles in this ring
-      radius:       { default: 5 },  // base radius of ring
-      y:            { default: 0 },    // base vertical offset
-      scale:        { default: 9 },    // base scale
-
-      // NEW: how "messy" the ring is
-      radiusJitter: { default: 1.0 },  // in/out variation
-      heightJitter: { default: 1.0 },  // up/down variation
-      depthJitter:  { default: 1.2 },  // toward/away from camera
-      scaleJitter:  { default: 0.9 }   // 0.6 → scale factor varies ~70–130%
-    },
-
-    init() {
-      const data = this.data;
-
-      for (let i = 0; i < data.count; i++) {
-        const angle = (i / data.count) * Math.PI * 2;
-
-        // --- distance from center (radius) with jitter ---
-        const radialOffset = (Math.random() - 0.5) * data.radiusJitter;
-        const r = data.radius + radialOffset;
-
-        // base x/z on the ring
-        let x = Math.cos(angle) * r;
-        let z = Math.sin(angle) * r;
-
-        // --- extra depth jitter (toward/away from camera) ---
-        const depthOffset = (Math.random() - 0.5) * data.depthJitter;
-        z += depthOffset;
-
-        // --- vertical jitter (up/down) ---
-        const y = data.y + (Math.random() - 0.5) * data.heightJitter;
-
-        // --- scale jitter (some big, some small) ---
-        // scaleFactor in range ~ (1 - scaleJitter/2) to (1 + scaleJitter/2)
-        const scaleFactor = 1 - data.scaleJitter / 2 + Math.random() * data.scaleJitter;
-        const s = data.scale * scaleFactor;
-
-        const bubble = document.createElement('a-entity');
-        bubble.setAttribute('gltf-model', '#bubbleModel');
-        bubble.setAttribute('force-phong', '');
-        bubble.setAttribute('position', `${x} ${y} ${z}`);
-        bubble.setAttribute('scale', `${s} ${s} ${s}`);
-
-        // optional: tiny random rotation so they don't all face exactly the same way
-        bubble.setAttribute('rotation', 
-          `${(Math.random() - 0.5) * 20} ${(Math.random() * 360).toFixed(2)} ${(Math.random() - 0.5) * 20}`
-        );
-
-        this.el.appendChild(bubble);
-      }
-    }
-  });
+  }
+});
 </script>
+
 
 </head>
 
