@@ -1,75 +1,22 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8">
+  <title>Bubble Sculpture (Spinning Rings)</title>
 
-  <!-- A-Frame + AR.js + loaders -->
+  <!-- A-Frame + AR.js -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-  <script src="https://rawgit.com/donmccurdy/aframe-extras/v6.0.0/dist/aframe-extras.loaders.min.js"></script>
-  <!-- Look-at for text -->
-  <script src="https://unpkg.com/aframe-look-at-component@0.8.0/dist/aframe-look-at-component.min.js"></script>
 
-  <style>body{margin:0;overflow:hidden}</style>
+  <style>
+    body { margin: 0; overflow: hidden; }
+  </style>
 
   <script>
-    // -------- Shared Webcam Texture --------
-    let sharedVideoTexture = null;
-    let sharedVideoElement = null;
-
-    AFRAME.registerComponent('webcam-bubble', {
-      schema: {
-        radius: { type: 'number', default: 0.25 }
-      },
-      init: function () {
-        const self = this;
-        function waitForVideo() {
-          if (!sharedVideoElement) {
-            const video = document.querySelector('video');
-            if (video && video.readyState >= 2) {
-              sharedVideoElement = video;
-              if (!sharedVideoTexture) {
-                const THREE = window.THREE;
-                sharedVideoTexture = new THREE.VideoTexture(sharedVideoElement);
-                sharedVideoTexture.minFilter = THREE.LinearFilter;
-                sharedVideoTexture.magFilter = THREE.LinearFilter;
-                sharedVideoTexture.format = THREE.RGBFormat;
-              }
-              self.createBubble();
-            } else {
-              setTimeout(waitForVideo, 200);
-            }
-          } else {
-            self.createBubble();
-          }
-        }
-        waitForVideo();
-      },
-      createBubble: function () {
-        const THREE = window.THREE;
-        if (!THREE || !sharedVideoTexture) return;
-
-        // Slightly lower geometry segments for performance
-        const geom = new THREE.SphereGeometry(this.data.radius, 12, 12);
-        const mat = new THREE.MeshBasicMaterial({
-          map: sharedVideoTexture,
-          transparent: true,
-          opacity: 0.25,
-          side: THREE.BackSide,
-          depthWrite: false,
-          depthTest: true
-        });
-
-        const mesh = new THREE.Mesh(geom, mat);
-        mesh.renderOrder = 2;
-        this.el.setObject3D('mesh', mesh);
-      }
-    });
-
+    // Your force-phong component
     AFRAME.registerComponent('force-phong', {
       schema: {
-        shininess: { default: 180 },
+        shininess:   { default: 180 },
         baseOpacity: { default: 0.08 }
       },
       init () {
@@ -82,19 +29,19 @@
 
             const base = n.material;
             const phong = new THREE.MeshPhongMaterial({
-              color: 0x222244,
-              emissive: 0x060a2e,
-              specular: 0xffffff,
-              shininess: this.data.shininess,
+              color:       0x222244,
+              emissive:    0x060a2e,
+              specular:    0xffffff,
+              shininess:   this.data.shininess,
               transparent: true,
-              opacity: (typeof base.opacity === 'number')
-                         ? base.opacity
-                         : this.data.baseOpacity,
-              side: THREE.DoubleSide,
-              depthWrite: false
+              opacity:     (typeof base.opacity === 'number')
+                             ? base.opacity
+                             : this.data.baseOpacity,
+              side:        THREE.DoubleSide,
+              depthWrite:  false
             });
 
-            if (base.map) phong.map = base.map;
+            if (base.map)       phong.map       = base.map;
             if (base.normalMap) phong.normalMap = base.normalMap;
 
             n.material = phong;
@@ -103,300 +50,6 @@
         });
       }
     });
-
-    // ------------------ Bubble Fade ------------------
-    AFRAME.registerComponent('bubble-fade', {
-      schema: {
-        from: { type: 'number', default: 0.07 },
-        to: { type: 'number', default: 0.0 },
-        dur: { type: 'number', default: 8000 },
-        delay: { type: 'number', default: 4000 }
-      },
-      init () {
-        this.materials = [];
-        this.startTime = null;
-        this.isAnimating = false;
-
-        this.el.addEventListener('model-loaded', () => {
-          const obj = this.el.getObject3D('mesh');
-          if (!obj) return;
-          obj.traverse(n => {
-            if (n.isMesh && n.material) {
-              this.materials.push(n.material);
-            }
-          });
-        });
-
-        this.el.addEventListener('start-fade', () => {
-          setTimeout(() => {
-            this.startTime = performance.now();
-            this.isAnimating = true;
-          }, this.data.delay);
-        });
-      },
-      tick () {
-        if (!this.isAnimating || !this.startTime) return;
-        const elapsed = performance.now() - this.startTime;
-        const progress = Math.min(elapsed / this.data.dur, 1);
-        const newOp = this.data.from * (1 - progress) + this.data.to * progress;
-
-        this.materials.forEach(m => {
-          m.opacity = newOp;
-          m.needsUpdate = true;
-        });
-
-        if (progress >= 1) this.isAnimating = false;
-      }
-    });
-
-    // ------------------ Poem Data ------------------
-    const POEM = [
-      { text: "are" },
-      { text: "you" },
-      { text: "seeing" },
-      { text: "mirrors" },
-      { text: "seeing" },
-      { text: "only" },
-      { text: "what" },
-      { text: "pleases" },
-      { text: "reflections" },
-      { text: "sameness" },
-      { text: "comfort" },
-      { text: "or bursting" },
-      { text: "learning" },
-      { text: "growing" }
-    ];
-
-    // ------------------ Multiple Bubbles with Sequential Text ------------------
-    window.addEventListener('DOMContentLoaded', () => {
-      // The rig is now in world-space (root of scene) so bubbles are anchored to the real world.
-      const rig = document.querySelector('#rig');
-      const cameraEl = document.querySelector('#arCam');
-
-      // Mobile-aware sizing so bubbles are visible on phones
-      const IS_MOBILE = AFRAME.utils && AFRAME.utils.device
-        ? AFRAME.utils.device.isMobile()
-        : /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-      // Tuning parameters
-      const MAX_BUBBLES = IS_MOBILE ? 2 : 3;
-      const SPAWN_INTERVAL = IS_MOBILE ? 2600 : 3000;
-      const BUBBLE_SCALE = IS_MOBILE ? 3.8 : 2.2;   // scale up on phones
-      const CLICK_RADIUS = IS_MOBILE ? 0.6 : 0.35;  // easier to tap on phones
-      const SPAWN_DIST_MIN = IS_MOBILE ? 0.6 : 0.9;  // how close in front of camera
-      const SPAWN_DIST_MAX = IS_MOBILE ? 1.0 : 1.6;
-      const RISE_BASE_MOBILE = IS_MOBILE ? 12000 : 18000;
-
-      let currentTextIndex = 0;  // Which poem text to show next
-      let activeContainers = [];
-      let poemComplete = false;
-
-      function removeContainer(container) {
-        activeContainers = activeContainers.filter(c => c !== container);
-        if (rig.contains(container)) {
-          rig.removeChild(container);
-        }
-      }
-
-      // Returns a world position in front of the camera with small lateral/random offsets.
-      function computeWorldStartPosition() {
-        const THREE = window.THREE;
-        const camObj = cameraEl.object3D;
-        const camPos = new THREE.Vector3();
-        const camDir = new THREE.Vector3();
-        camObj.getWorldPosition(camPos);
-        camObj.getWorldDirection(camDir); // unit vector pointing forward
-
-        // Right and up vectors in world space
-        const camUp = new THREE.Vector3(0, 1, 0);
-        camObj.getWorldQuaternion(new THREE.Quaternion()).multiplyVector3?.call; // noop to keep lint happy
-        // compute right using cross(dir, up)
-        const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
-
-        // Slight randomness scaled smaller on phones to keep things in view
-        const xOffset = (Math.random() * 2 - 1) * (IS_MOBILE ? 0.15 : 0.35);
-        const yOffset = (Math.random() * (IS_MOBILE ? 0.3 : 0.6)) - (IS_MOBILE ? 0.05 : 0.25);
-        const distance = SPAWN_DIST_MIN + Math.random() * (SPAWN_DIST_MAX - SPAWN_DIST_MIN);
-
-        // world position = camPos + camDir*distance + camRight*xOffset + up*yOffset
-        const pos = camPos.clone()
-          .add(camDir.clone().multiplyScalar(distance))
-          .add(camRight.clone().multiplyScalar(xOffset))
-          .add(new THREE.Vector3(0, 1, 0).multiplyScalar(yOffset));
-
-        return pos;
-      }
-
-      function spawnBubble() {
-        if (activeContainers.length >= MAX_BUBBLES) return;
-        if (poemComplete && currentTextIndex >= POEM.length) return;
-
-        const THREE = window.THREE;
-        const startVec = computeWorldStartPosition();
-
-        const container = document.createElement('a-entity');
-        container.setAttribute('position', `${startVec.x} ${startVec.y} ${startVec.z}`);
-
-        // Random rotation for visual variety
-        container.setAttribute('rotation',
-          `${15 + (Math.random()*10-5)} ${Math.random()*360} ${15 + (Math.random()*10-5)}`);
-
-        container.setAttribute('scale', `${BUBBLE_SCALE} ${BUBBLE_SCALE} ${BUBBLE_SCALE}`);
-
-        // Compute an upward end position in world coords (so animation moves upward in world)
-        const upAmount = 1.4 + Math.random() * 0.6;
-        const endVec = startVec.clone().add(new THREE.Vector3(0, upAmount, 0));
-
-        const riseDur = RISE_BASE_MOBILE + Math.random() * 7000;
-
-        // Animate world position by tweening the entity's position (works when entity is at scene root)
-        container.setAttribute(
-          'animation__rise',
-          `property: position; dur: ${riseDur}; easing: easeInOutSine; to: ${endVec.x} ${endVec.y} ${endVec.z}`
-        );
-
-        container.addEventListener('animationcomplete__rise', () => {
-          if (rig.contains(container)) {
-            removeContainer(container);
-          }
-        });
-
-        // Inner wobble GLB
-        const model = document.createElement('a-entity');
-        model.setAttribute('gltf-model', '#myModel');
-        model.setAttribute('force-phong', 'shininess:400');
-        model.setAttribute('animation-mixer', 'loop: repeat');
-        model.setAttribute('position', '0 0 0');
-        container.appendChild(model);
-
-        // Outer webcam shell
-        const webcamShell = document.createElement('a-entity');
-        webcamShell.setAttribute('position', '0 0 0');
-
-        model.addEventListener('model-loaded', () => {
-          const obj = model.getObject3D('mesh');
-          if (!obj) return;
-
-          const box = new THREE.Box3().setFromObject(obj);
-          const size = new THREE.Vector3();
-          box.getSize(size);
-
-          const wobbleRadius = Math.max(size.x, size.y, size.z) / 2;
-          const shellRadius = wobbleRadius * 0.75;
-
-          webcamShell.setAttribute('webcam-bubble', `radius:${shellRadius}`);
-        });
-
-        container.appendChild(webcamShell);
-
-        // Click helper (slightly larger/higher on mobile to improve hit)
-        const clickSphere = document.createElement('a-sphere');
-        clickSphere.setAttribute('radius', CLICK_RADIUS.toString());
-        clickSphere.setAttribute('material', 'opacity:0; transparent:true');
-        clickSphere.classList.add('clickable');
-        container.appendChild(clickSphere);
-
-        // Click handler
-        let clicked = false;
-        container.addEventListener('click', () => {
-          if (clicked) return;
-          if (currentTextIndex >= POEM.length) {
-            // Poem complete, just pop bubble without text
-            clicked = true;
-            removeContainer(container);
-            return;
-          }
-          clicked = true;
-
-          const stanza = POEM[currentTextIndex];
-          currentTextIndex++;
-
-          console.log(`💥 Showing text ${currentTextIndex}/${POEM.length}: "${stanza.text}"`);
-
-          const worldPos = container.object3D.getWorldPosition(new THREE.Vector3());
-          const worldRot = container.object3D.rotation;
-          const worldScale = container.object3D.getWorldScale(new THREE.Vector3());
-
-          removeContainer(container);
-
-          // Split GLB
-          const split = document.createElement('a-entity');
-          split.setAttribute('gltf-model', '#mySplit');
-          split.setAttribute('position',
-            `${worldPos.x} ${worldPos.y} ${worldPos.z}`);
-          split.setAttribute('rotation',
-            `${worldRot.x * 180/Math.PI} ${worldRot.y * 180/Math.PI} ${worldRot.z * 180/Math.PI}`);
-          split.setAttribute('scale',
-            `${worldScale.x} ${worldScale.y} ${worldScale.z}`);
-          split.setAttribute('force-phong', 'shininess:800');
-          split.setAttribute('bubble-fade',
-            'from:0.07; to:0; dur:8000; delay:4000');
-          split.setAttribute('animation-mixer',
-            'clip:*; loop:once; repetitions:1; clampWhenFinished:true');
-          rig.appendChild(split);
-
-          setTimeout(() => {
-            split.emit('start-fade');
-          }, 100);
-
-          // Text (bigger on mobile)
-          const txt = document.createElement('a-entity');
-          txt.setAttribute('text', {
-            value: stanza.text,
-            color: '#A8DBE6',
-            align: 'center',
-            width: IS_MOBILE ? 2.2 : 1.6,
-            font: 'kelsonsans',
-            wrapCount: IS_MOBILE ? 12 : 10
-          });
-          txt.setAttribute('material', 'transparent:true; opacity:1');
-          txt.setAttribute('position',
-            `${worldPos.x} ${worldPos.y + (IS_MOBILE ? 0.35 : 0.2)} ${worldPos.z + (IS_MOBILE ? 0.6 : 0.4)}`);
-          // Make sure text faces the real camera entity
-          txt.setAttribute('look-at', '#arCam');
-          txt.setAttribute(
-            'animation__fadeout',
-            'property: material.opacity; from:1; to:0; dur:1500; startEvents: fade-out'
-          );
-          rig.appendChild(txt);
-
-          setTimeout(() => {
-            txt.emit('fade-out');
-          }, 3000);
-
-          setTimeout(() => {
-            if (rig.contains(txt)) rig.removeChild(txt);
-            if (rig.contains(split)) rig.removeChild(split);
-          }, 10000);
-
-          // Check if poem is complete
-          if (currentTextIndex >= POEM.length) {
-            poemComplete = true;
-            console.log('🎉 Poem complete! Waiting for remaining bubbles to clear...');
-
-            // After all text shown, wait then restart
-            setTimeout(() => {
-              console.log('🔄 Restarting poem sequence...');
-              currentTextIndex = 0;
-              poemComplete = false;
-            }, 20000);
-          }
-        });
-
-        rig.appendChild(container);
-        activeContainers.push(container);
-      }
-
-      // Continuous spawning
-      setInterval(() => {
-        spawnBubble();
-      }, SPAWN_INTERVAL);
-
-      // Initial bubbles with staggered starts
-      setTimeout(() => spawnBubble(), 500);
-      setTimeout(() => spawnBubble(), 1600);
-      setTimeout(() => spawnBubble(), 3000);
-    });
   </script>
 </head>
 
@@ -404,35 +57,78 @@
   <a-scene
     embedded
     vr-mode-ui="enabled:false"
-    renderer="physicallyCorrectLights:true;antialias:true;logarithmicDepthBuffer:true;colorManagement:true;toneMapping:ACESFilmic;exposure:1.9"
-    arjs="sourceType:webcam;trackingMethod:best;debugUIEnabled:false">
+    renderer="logarithmicDepthBuffer:true;antialias:true;colorManagement:true;physicallyCorrectLights:true;toneMapping:ACESFilmic;exposure:1.9"
+    arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled:false">
 
-    <!-- Assets -->
+    <!-- Camera like your reference -->
+    <a-camera></a-camera>
+
+    <!-- Bubble Model -->
     <a-assets timeout="60000">
-      <a-asset-item id="myModel" src="wobble5.glb"></a-asset-item>
-      <a-asset-item id="mySplit" src="BubbleSplit.glb"></a-asset-item>
+      <a-asset-item id="bubbleModel" src="wobble5.glb"></a-asset-item>
     </a-assets>
 
-    <!-- AR Camera -->
-    <a-entity camera arjs-camera id="arCam"></a-entity>
+    <!-- Your lights -->
+    <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
 
-    <!-- RIG moved to scene root so children are in world space (not camera-relative) -->
-    <a-entity id="rig">
-      <!-- Lights -->
-      <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
-      <a-entity position="1 2 -1"
-                light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
-      <a-entity position="-2 2 1"
-                light="type:directional; intensity:8; color:#E65E63"></a-entity>
-      <a-entity position="0.5 0.6 -0.8"
-                light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
-      <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
-    </a-entity>
+    <a-entity position="1 2 -1"
+              light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
 
-    <!-- Mouse/touch raycaster -->
+    <a-entity position="-2 2 1"
+              light="type:directional; intensity:8; color:#E65E63"></a-entity>
+
+    <a-entity position="0.5 0.6 -0.8"
+              light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
+
+    <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
+
+
+    <!-- Floating + spinning bubble sculpture -->
     <a-entity
-      cursor="rayOrigin: mouse; fuse:false"
-      raycaster="objects:.clickable; far:100; interval:100">
+      id="bubble-sculpture"
+      position="0 -0.4 -4"
+      animation__float="property: position.y; from:-0.6; to:0.6; dur:12000; dir:alternate; loop:true; easing:easeInOutSine">
+
+      <!-- Center bubble -->
+      <a-entity gltf-model="#bubbleModel"
+                force-phong
+                position="0 0 0"
+                scale="3 3 3">
+      </a-entity>
+
+      <!-- Outer ring: clockwise spin -->
+      <a-entity
+        id="ring-outer"
+        animation__spin="property: rotation.y; to:360; loop:true; dur:50000; easing:linear">
+
+        <a-entity gltf-model="#bubbleModel" force-phong position=" 3  0  0" scale="2.2 2.2 2.2"></a-entity>
+        <a-entity gltf-model="#bubbleModel" force-phong position="-3  0  0" scale="2.2 2.2 2.2"></a-entity>
+        <a-entity gltf-model="#bubbleModel" force-phong position=" 0  0  3" scale="2.2 2.2 2.2"></a-entity>
+        <a-entity gltf-model="#bubbleModel" force-phong position=" 0  0 -3" scale="2.2 2.2 2.2"></a-entity>
+      </a-entity>
+
+      <!-- Upper ring: counter-clockwise -->
+      <a-entity
+        id="ring-upper"
+        animation__spin="property: rotation.y; to:-360; loop:true; dur:60000; easing:linear">
+
+        <a-entity gltf-model="#bubbleModel" force-phong position=" 2.2  2.0  2.2" scale="1.8 1.8 1.8"></a-entity>
+        <a-entity gltf-model="#bubbleModel" force-phong position="-2.2  2.0  2.2" scale="1.8 1.8 1.8"></a-entity>
+        <a-entity gltf-model="#bubbleModel" force-phong position=" 2.2  2.0 -2.2" scale="1.8 1.8 1.8"></a-entity>
+        <a-entity gltf-model="#bubbleModel" force-phong position="-2.2  2.0 -2.2" scale="1.8 1.8 1.8"></a-entity>
+      </a-entity>
+
+      <!-- Lower ring: clockwise, different speed -->
+      <a-entity
+        id="ring-lower"
+        animation__spin="property: rotation.y; to:360; loop:true; dur:55000; easing:linear">
+
+        <a-entity gltf-model="#bubbleModel" force-phong position=" 2.0 -1.8  2.0" scale="1.6 1.6 1.6"></a-entity>
+        <a-entity gltf-model="#bubbleModel" force-phong position="-2.0 -1.8  2.0" scale="1.6 1.6 1.6"></a-entity>
+        <a-entity gltf-model="#bubbleModel" force-phong position=" 2.0 -1.8 -2.0" scale="1.6 1.6 1.6"></a-entity>
+        <a-entity gltf-model="#bubbleModel" force-phong position="-2.0 -1.8 -2.0" scale="1.6 1.6 1.6"></a-entity>
+      </a-entity>
+
     </a-entity>
 
   </a-scene>
