@@ -55,7 +55,7 @@
   AFRAME.registerComponent('random-bubble-ring', {
     schema: {
       count:        { default: 8 },    // how many bubbles in this ring
-      radius:       { default: 2.5 },  // base radius of ring
+      radius:       { default: 5 },  // base radius of ring
       y:            { default: 0 },    // base vertical offset
       scale:        { default: 9 },    // base scale
 
@@ -63,7 +63,7 @@
       radiusJitter: { default: 1.0 },  // in/out variation
       heightJitter: { default: 1.0 },  // up/down variation
       depthJitter:  { default: 1.2 },  // toward/away from camera
-      scaleJitter:  { default: 0.6 }   // 0.6 → scale factor varies ~70–130%
+      scaleJitter:  { default: 0.9 }   // 0.6 → scale factor varies ~70–130%
     },
 
     init() {
@@ -152,7 +152,7 @@
       <a-entity gltf-model="#bubbleModel"
                 force-phong
                 position="0 0 0"
-                scale="6 6 6">
+                scale="15 15 15">
       </a-entity>
 
       <!-- Outer ring: looser, bigger variation -->
