@@ -51,7 +51,7 @@
         if (!THREE || !sharedVideoTexture) return;
 
         // Slightly lower geometry segments for performance
-        const geom = new THREE.SphereGeometry(this.data.radius, 16, 16);
+        const geom = new THREE.SphereGeometry(this.data.radius, 12, 12);
         const mat = new THREE.MeshBasicMaterial({
           map: sharedVideoTexture,
           transparent: true,
@@ -169,17 +169,23 @@
 
     // ------------------ Multiple Bubbles with Sequential Text ------------------
     window.addEventListener('DOMContentLoaded', () => {
+      // The rig is now in world-space (root of scene) so bubbles are anchored to the real world.
       const rig = document.querySelector('#rig');
-      const MAX_BUBBLES = 3;
-      const SPAWN_INTERVAL = 3000;
+      const cameraEl = document.querySelector('#arCam');
 
-      // ---- Mobile-aware sizing so bubbles are visible on phones ----
+      // Mobile-aware sizing so bubbles are visible on phones
       const IS_MOBILE = AFRAME.utils && AFRAME.utils.device
         ? AFRAME.utils.device.isMobile()
         : /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
-      const BUBBLE_SCALE = IS_MOBILE ? 3.2 : 2.2;   // scale up more on phones
-      const CLICK_RADIUS = IS_MOBILE ? 0.45 : 0.35; // easier to tap on phones
+      // Tuning parameters
+      const MAX_BUBBLES = IS_MOBILE ? 2 : 3;
+      const SPAWN_INTERVAL = IS_MOBILE ? 2600 : 3000;
+      const BUBBLE_SCALE = IS_MOBILE ? 3.8 : 2.2;   // scale up on phones
+      const CLICK_RADIUS = IS_MOBILE ? 0.6 : 0.35;  // easier to tap on phones
+      const SPAWN_DIST_MIN = IS_MOBILE ? 0.6 : 0.9;  // how close in front of camera
+      const SPAWN_DIST_MAX = IS_MOBILE ? 1.0 : 1.6;
+      const RISE_BASE_MOBILE = IS_MOBILE ? 12000 : 18000;
 
       let currentTextIndex = 0;  // Which poem text to show next
       let activeContainers = [];
@@ -192,41 +198,61 @@
         }
       }
 
-      // Spawn closer to camera and nearer center so bubbles stay in view
-      function randomBubbleStartPosition() {
-        const xRange = IS_MOBILE ? 0.35 : 0.6;   // narrower horizontally on phones
-        const zNear = IS_MOBILE ? -0.9 : -1.2;
-        const zFar  = IS_MOBILE ? -0.7 : -1.0;
-        const yMin  = IS_MOBILE ? -0.1 : -0.4;
-        const yMax  = IS_MOBILE ?  0.25 :  0.1;
+      // Returns a world position in front of the camera with small lateral/random offsets.
+      function computeWorldStartPosition() {
+        const THREE = window.THREE;
+        const camObj = cameraEl.object3D;
+        const camPos = new THREE.Vector3();
+        const camDir = new THREE.Vector3();
+        camObj.getWorldPosition(camPos);
+        camObj.getWorldDirection(camDir); // unit vector pointing forward
 
-        const x = (Math.random() * 2 - 1) * xRange;
-        const z = zNear + Math.random() * (zFar - zNear);
-        const y = yMin + Math.random() * (yMax - yMin);
+        // Right and up vectors in world space
+        const camUp = new THREE.Vector3(0, 1, 0);
+        camObj.getWorldQuaternion(new THREE.Quaternion()).multiplyVector3?.call; // noop to keep lint happy
+        // compute right using cross(dir, up)
+        const camRight = new THREE.Vector3().crossVectors(camDir, camUp).normalize();
 
-        return { x, y, z };
+        // Slight randomness scaled smaller on phones to keep things in view
+        const xOffset = (Math.random() * 2 - 1) * (IS_MOBILE ? 0.15 : 0.35);
+        const yOffset = (Math.random() * (IS_MOBILE ? 0.3 : 0.6)) - (IS_MOBILE ? 0.05 : 0.25);
+        const distance = SPAWN_DIST_MIN + Math.random() * (SPAWN_DIST_MAX - SPAWN_DIST_MIN);
+
+        // world position = camPos + camDir*distance + camRight*xOffset + up*yOffset
+        const pos = camPos.clone()
+          .add(camDir.clone().multiplyScalar(distance))
+          .add(camRight.clone().multiplyScalar(xOffset))
+          .add(new THREE.Vector3(0, 1, 0).multiplyScalar(yOffset));
+
+        return pos;
       }
 
       function spawnBubble() {
         if (activeContainers.length >= MAX_BUBBLES) return;
         if (poemComplete && currentTextIndex >= POEM.length) return;
 
+        const THREE = window.THREE;
+        const startVec = computeWorldStartPosition();
+
         const container = document.createElement('a-entity');
-        const startPos = randomBubbleStartPosition();
+        container.setAttribute('position', `${startVec.x} ${startVec.y} ${startVec.z}`);
 
-        const startY = startPos.y;
-        const endY = startY + 1.6 + Math.random() * 0.4;
-
-        container.setAttribute('position', `${startPos.x} ${startY} ${startPos.z}`);
+        // Random rotation for visual variety
         container.setAttribute('rotation',
-          `${15 + (Math.random()*10-5)} ${15 + (Math.random()*20-10)} ${15 + (Math.random()*10-5)}`);
+          `${15 + (Math.random()*10-5)} ${Math.random()*360} ${15 + (Math.random()*10-5)}`);
+
         container.setAttribute('scale', `${BUBBLE_SCALE} ${BUBBLE_SCALE} ${BUBBLE_SCALE}`);
 
-        const riseDur = 18000 + Math.random() * 7000;
+        // Compute an upward end position in world coords (so animation moves upward in world)
+        const upAmount = 1.4 + Math.random() * 0.6;
+        const endVec = startVec.clone().add(new THREE.Vector3(0, upAmount, 0));
 
+        const riseDur = RISE_BASE_MOBILE + Math.random() * 7000;
+
+        // Animate world position by tweening the entity's position (works when entity is at scene root)
         container.setAttribute(
           'animation__rise',
-          `property: position; dur: ${riseDur}; easing: easeInOutSine; to: ${startPos.x} ${endY} ${startPos.z}`
+          `property: position; dur: ${riseDur}; easing: easeInOutSine; to: ${endVec.x} ${endVec.y} ${endVec.z}`
         );
 
         container.addEventListener('animationcomplete__rise', () => {
@@ -256,14 +282,14 @@
           box.getSize(size);
 
           const wobbleRadius = Math.max(size.x, size.y, size.z) / 2;
-          const shellRadius = wobbleRadius * 0.75;  // keep your 0.75 relationship
+          const shellRadius = wobbleRadius * 0.75;
 
           webcamShell.setAttribute('webcam-bubble', `radius:${shellRadius}`);
         });
 
         container.appendChild(webcamShell);
 
-        // Click helper
+        // Click helper (slightly larger/higher on mobile to improve hit)
         const clickSphere = document.createElement('a-sphere');
         clickSphere.setAttribute('radius', CLICK_RADIUS.toString());
         clickSphere.setAttribute('material', 'opacity:0; transparent:true');
@@ -313,19 +339,21 @@
             split.emit('start-fade');
           }, 100);
 
-          // Text
+          // Text (bigger on mobile)
           const txt = document.createElement('a-entity');
           txt.setAttribute('text', {
             value: stanza.text,
             color: '#A8DBE6',
             align: 'center',
-            width: 1.5,
-            font: 'kelsonsans'
+            width: IS_MOBILE ? 2.2 : 1.6,
+            font: 'kelsonsans',
+            wrapCount: IS_MOBILE ? 12 : 10
           });
           txt.setAttribute('material', 'transparent:true; opacity:1');
           txt.setAttribute('position',
-            `${worldPos.x} ${worldPos.y + 0.2} ${worldPos.z + 0.4}`);
-          txt.setAttribute('look-at', '[camera]');
+            `${worldPos.x} ${worldPos.y + (IS_MOBILE ? 0.35 : 0.2)} ${worldPos.z + (IS_MOBILE ? 0.6 : 0.4)}`);
+          // Make sure text faces the real camera entity
+          txt.setAttribute('look-at', '#arCam');
           txt.setAttribute(
             'animation__fadeout',
             'property: material.opacity; from:1; to:0; dur:1500; startEvents: fade-out'
@@ -364,10 +392,10 @@
         spawnBubble();
       }, SPAWN_INTERVAL);
 
-      // Initial bubbles
+      // Initial bubbles with staggered starts
       setTimeout(() => spawnBubble(), 500);
-      setTimeout(() => spawnBubble(), 2000);
-      setTimeout(() => spawnBubble(), 3500);
+      setTimeout(() => spawnBubble(), 1600);
+      setTimeout(() => spawnBubble(), 3000);
     });
   </script>
 </head>
@@ -385,22 +413,23 @@
       <a-asset-item id="mySplit" src="BubbleSplit.glb"></a-asset-item>
     </a-assets>
 
-    <!-- AR Camera with rig -->
-    <a-entity camera arjs-camera id="arCam">
-      <a-entity id="rig">
-        <!-- Lights -->
-        <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
-        <a-entity position="1 2 -1"
-                  light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
-        <a-entity position="-2 2 1"
-                  light="type:directional; intensity:8; color:#E65E63"></a-entity>
-        <a-entity position="0.5 0.6 -0.8"
-                  light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
-        <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
-      </a-entity>
+    <!-- AR Camera -->
+    <a-entity camera arjs-camera id="arCam"></a-entity>
+
+    <!-- RIG moved to scene root so children are in world space (not camera-relative) -->
+    <a-entity id="rig">
+      <!-- Lights -->
+      <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
+      <a-entity position="1 2 -1"
+                light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
+      <a-entity position="-2 2 1"
+                light="type:directional; intensity:8; color:#E65E63"></a-entity>
+      <a-entity position="0.5 0.6 -0.8"
+                light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
+      <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
     </a-entity>
 
-    <!-- Mouse raycaster -->
+    <!-- Mouse/touch raycaster -->
     <a-entity
       cursor="rayOrigin: mouse; fuse:false"
       raycaster="objects:.clickable; far:100; interval:100">
