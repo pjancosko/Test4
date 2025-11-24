@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Bubble Sculpture (Spinning Rings)</title>
+  <title>Bubble Sculpture (Giant Spinning Rings)</title>
 
   <!-- A-Frame + AR.js -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
@@ -13,7 +13,7 @@
   </style>
 
   <script>
-    // Your force-phong component
+    // --------- Your force-phong component ----------
     AFRAME.registerComponent('force-phong', {
       schema: {
         shininess:   { default: 180 },
@@ -50,43 +50,41 @@
         });
       }
     });
-	  
-	  AFRAME.registerComponent('random-bubble-ring', {
-  schema: {
-    count: {default: 8},
-    radius: {default: 4},
-    y: {default: 0},
-    scale: {default: 25}
-  },
-  init() {
-    const THREE = AFRAME.THREE;
-    const radius = this.data.radius;
-    const count = this.data.count;
-    const y = this.data.y;
-    const scale = this.data.scale;
 
-    for (let i = 0; i < count; i++) {
-      const angle = (i / count) * Math.PI * 2;
+    // --------- Random bubble ring generator ----------
+    AFRAME.registerComponent('random-bubble-ring', {
+      schema: {
+        count: {default: 8},     // how many bubbles in this ring
+        radius: {default: 2.5},  // base radius before sculpture scale
+        y: {default: 0},         // vertical offset
+        scale: {default: 150}    // base scale per bubble (before jitter)
+      },
+      init() {
+        const data = this.data;
+        for (let i = 0; i < data.count; i++) {
+          const angle = (i / data.count) * Math.PI * 2;
 
-      // randomness
-      const jitterX = (Math.random() - 0.5) * 1.2;
-      const jitterY = (Math.random() - 0.5) * 0.8;
-      const jitterZ = (Math.random() - 0.5) * 1.2;
-      const jitterScale = scale + (Math.random() - 0.5) * (scale * 0.3);
+          // Slight random radial and vertical offsets
+          const radialJitter = (Math.random() - 0.5) * 0.4;
+          const r = data.radius + radialJitter;
+          const x = Math.cos(angle) * r;
+          const z = Math.sin(angle) * r;
+          const y = data.y + (Math.random() - 0.5) * 0.6;
 
-      const x = Math.cos(angle) * radius + jitterX;
-      const z = Math.sin(angle) * radius + jitterZ;
+          // Big scale with ±20% variation
+          const baseScale = data.scale;
+          const jitterScale = baseScale * (0.8 + Math.random() * 0.4); // 0.8–1.2
 
-      const bubble = document.createElement('a-entity');
-      bubble.setAttribute('gltf-model', '#bubbleModel');
-      bubble.setAttribute('force-phong', '');
-      bubble.setAttribute('position', `${x} ${y + jitterY} ${z}`);
-      bubble.setAttribute('scale', `${jitterScale} ${jitterScale} ${jitterScale}`);
+          const bubble = document.createElement('a-entity');
+          bubble.setAttribute('gltf-model', '#bubbleModel');
+          bubble.setAttribute('force-phong', '');
+          bubble.setAttribute('position', `${x} ${y} ${z}`);
+          bubble.setAttribute('scale', `${jitterScale} ${jitterScale} ${jitterScale}`);
 
-      this.el.appendChild(bubble);
-    }
-  }
-});
+          this.el.appendChild(bubble);
+        }
+      }
+    });
   </script>
 </head>
 
@@ -120,38 +118,40 @@
     <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
 
 
-    <!-- Floating + spinning bubble sculpture -->
-<a-entity
-  id="bubble-sculpture"
-  position="0 -0.4 -4"
-  scale="1 1 1"
-  animation__float="property: position.y; from:-1; to:1; dur:12000; dir:alternate; loop:true; easing:easeInOutSine">
+    <!-- Floating + spinning GIANT bubble sculpture -->
+    <a-entity
+      id="bubble-sculpture"
+      position="0 -0.5 -8"
+      scale="8 8 8"
+      animation__float="property: position.y; from:-1.2; to:1.2; dur:14000; dir:alternate; loop:true; easing:easeInOutSine">
 
-
-      <!-- Center bubble -->
+      <!-- Center bubble (anchor, also big) -->
       <a-entity gltf-model="#bubbleModel"
                 force-phong
                 position="0 0 0"
-                scale="3 3 3">
+                scale="180 180 180">
       </a-entity>
 
-      <a-entity id="ring-outer"
-          animation__spin="property: rotation.y; to:360; loop:true; dur:50000; easing:linear"
-          random-bubble-ring="count:8; radius:4; y:0; scale:5">
-</a-entity>
+      <!-- Outer ring: clockwise spin -->
+      <a-entity
+        id="ring-outer"
+        animation__spin="property: rotation.y; to:360; loop:true; dur:50000; easing:linear"
+        random-bubble-ring="count:10; radius:3; y:0; scale:150">
+      </a-entity>
 
+      <!-- Upper ring: counter-clockwise, slower -->
+      <a-entity
+        id="ring-upper"
+        animation__spin="property: rotation.y; to:-360; loop:true; dur:60000; easing:linear"
+        random-bubble-ring="count:8; radius:2.6; y:2.2; scale:150">
+      </a-entity>
 
-     <a-entity id="ring-upper"
-          animation__spin="property: rotation.y; to:-360; loop:true; dur:60000; easing:linear"
-          random-bubble-ring="count:6; radius:3.3; y:2; scale:5">
-</a-entity>
-
-
-      <a-entity id="ring-lower"
-          animation__spin="property: rotation.y; to:360; loop:true; dur:55000; easing:linear"
-          random-bubble-ring="count:6; radius:3; y:-2; scale:5">
-</a-entity>
-
+      <!-- Lower ring: clockwise, different speed -->
+      <a-entity
+        id="ring-lower"
+        animation__spin="property: rotation.y; to:360; loop:true; dur:55000; easing:linear"
+        random-bubble-ring="count:8; radius:2.4; y:-2.2; scale:150">
+      </a-entity>
 
     </a-entity>
 
