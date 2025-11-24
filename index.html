@@ -122,35 +122,38 @@
     <a-entity
       id="bubble-sculpture"
       position="0 -0.5 -8"
-      scale="8 8 8"
+      scale="3 3 3"
       animation__float="property: position.y; from:-1.2; to:1.2; dur:14000; dir:alternate; loop:true; easing:easeInOutSine">
 
       <!-- Center bubble (anchor, also big) -->
       <a-entity gltf-model="#bubbleModel"
                 force-phong
                 position="0 0 0"
-                scale="180 180 180">
+                scale="50 50 50">
       </a-entity>
 
       <!-- Outer ring: clockwise spin -->
       <a-entity
         id="ring-outer"
         animation__spin="property: rotation.y; to:360; loop:true; dur:50000; easing:linear"
-        random-bubble-ring="count:10; radius:3; y:0; scale:150">
+        random-bubble-ring="count:10; radius:3; y:0; scale:40"
+
       </a-entity>
 
       <!-- Upper ring: counter-clockwise, slower -->
       <a-entity
         id="ring-upper"
         animation__spin="property: rotation.y; to:-360; loop:true; dur:60000; easing:linear"
-        random-bubble-ring="count:8; radius:2.6; y:2.2; scale:150">
+        random-bubble-ring="count:8; radius:2.6; y:2.2; scale:40"
+
       </a-entity>
 
       <!-- Lower ring: clockwise, different speed -->
       <a-entity
         id="ring-lower"
         animation__spin="property: rotation.y; to:360; loop:true; dur:55000; easing:linear"
-        random-bubble-ring="count:8; radius:2.4; y:-2.2; scale:150">
+        random-bubble-ring="count:8; radius:2.4; y:-2.2; scale:40"
+
       </a-entity>
 
     </a-entity>
