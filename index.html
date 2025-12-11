@@ -15,158 +15,232 @@
   </style>
 
   <script>
-    // --------- Force Phong on all GLTF meshes ---------- 
-    AFRAME.registerComponent('force-phong', {
-      schema: {
-        shininess:   { default: 180 },
-        baseOpacity: { default: 0.08 }
-      },
-      init () {
-        this.el.addEventListener('model-loaded', () => {
-          const obj = this.el.getObject3D('mesh');
-          if (!obj) return;
+  // --------- Force Phong on all GLTF meshes ---------- 
+  AFRAME.registerComponent('force-phong', {
+    schema: {
+      shininess:   { default: 180 },
+      baseOpacity: { default: 0.08 }
+    },
+    init () {
+      this.el.addEventListener('model-loaded', () => {
+        const obj = this.el.getObject3D('mesh');
+        if (!obj) return;
 
-          obj.traverse(n => {
-            if (!n.isMesh || !n.material) return;
+        obj.traverse(n => {
+          if (!n.isMesh || !n.material) return;
 
-            const base = n.material;
-            const phong = new THREE.MeshPhongMaterial({
-              color:       0x222244,
-              emissive:    0x060a2e,
-              specular:    0xffffff,
-              shininess:   this.data.shininess,
-              transparent: true,
-              opacity:     (typeof base.opacity === 'number')
-                             ? base.opacity
-                             : this.data.baseOpacity,
-              side:        THREE.DoubleSide,
-              depthWrite:  false
-            });
-
-            if (base.map)       phong.map       = base.map;
-            if (base.normalMap) phong.normalMap = base.normalMap;
-
-            n.material = phong;
-            n.material.needsUpdate = true;
+          const base = n.material;
+          const phong = new THREE.MeshPhongMaterial({
+            color:       0x222244,
+            emissive:    0x060a2e,
+            specular:    0xffffff,
+            shininess:   this.data.shininess,
+            transparent: true,
+            opacity:     (typeof base.opacity === 'number')
+                           ? base.opacity
+                           : this.data.baseOpacity,
+            side:        THREE.DoubleSide,
+            depthWrite:  false
           });
+
+          if (base.map)       phong.map       = base.map;
+          if (base.normalMap) phong.normalMap = base.normalMap;
+
+          n.material = phong;
+          n.material.needsUpdate = true;
         });
+      });
+    }
+  });
+
+  // --------- Bubble-pop: hide bubble, spawn BubbleSplit.glb, then fade split ----------
+  AFRAME.registerComponent('bubble-pop', {
+    schema: {
+      splitScaleMultiplier: { default: 1.5 },  // BubbleSplit a bit larger
+      fadeDelay:            { default: 3000 }, // ms before fade starts (let anim play)
+      fadeDuration:         { default: 3000 }  // ms for fade-out
+    },
+
+    init: function () {
+      this.popped = false;
+
+      // Make this entity hittable by the raycaster
+      this.el.classList.add('clickable');
+
+      this.onInteract = this.onInteract.bind(this);
+      this.el.addEventListener('click', this.onInteract);
+      this.el.addEventListener('touchstart', this.onInteract);
+    },
+
+    onInteract: function () {
+      this.popBubble();
+    },
+
+    popBubble: function () {
+      if (this.popped) return;
+      this.popped = true;
+
+      const el     = this.el;
+      const parent = el.parentNode;
+      if (!parent) return;
+
+      // Play the pop sound
+      const popSound = document.querySelector('#popSound');
+      if (popSound) {
+        const soundClone = popSound.cloneNode();
+        soundClone.volume = 0.7;
+        soundClone.play().catch(e => console.log('Sound play failed:', e));
       }
-    });
 
-    // --------- Bubble-pop: hide bubble, spawn BubbleSplit.glb ---------- 
-    AFRAME.registerComponent('bubble-pop', {
-      schema: {
-        splitScaleMultiplier: { default: 1.5 } // make BubbleSplit a bit larger so you SEE it
-      },
+      const pos   = el.getAttribute('position');
+      const rot   = el.getAttribute('rotation');
+      const scale = el.getAttribute('scale');
 
-      init: function () {
-        const el = this.el;
-        this.popped = false;
+      // Hide the original bubble
+      el.setAttribute('visible', false);
 
-        // Make this entity hittable by the raycaster
-        el.classList.add('clickable');
+      // Create a NEW BubbleSplit entity at the same transform
+      const split = document.createElement('a-entity');
+      split.setAttribute('gltf-model', '#bubbleSplitModel');
+      split.setAttribute('force-phong', '');
+      split.setAttribute('position', pos);
+      split.setAttribute('rotation', rot);
 
-        this.onInteract = this.popBubble.bind(this);
-        el.addEventListener('click', this.onInteract);
-        el.addEventListener('touchstart', this.onInteract);
-      },
+      const finalScale = {
+        x: scale.x * this.data.splitScaleMultiplier,
+        y: scale.y * this.data.splitScaleMultiplier,
+        z: scale.z * this.data.splitScaleMultiplier
+      };
+      split.setAttribute('scale', `${finalScale.x} ${finalScale.y} ${finalScale.z}`);
 
-      popBubble: function () {
-        if (this.popped) return;
-        this.popped = true;
+      // Play split animation once
+      split.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
 
-        const el     = this.el;
-        const parent = el.parentNode;
-        if (!parent) return;
+      parent.appendChild(split);
 
-        const pos   = el.getAttribute('position');
-        const rot   = el.getAttribute('rotation');
-        const scale = el.getAttribute('scale');
+      // When the model is ready, schedule the fade
+      split.addEventListener('model-loaded', () => {
+        this.startSplitFade(split);
+      });
+    },
 
-        // Hide the original bubble (so you see only the split)
-        el.setAttribute('visible', false);
+    // Fade from each material's *current* opacity → 0, with a soft ease
+    startSplitFade: function (splitEl) {
+      const mesh = splitEl.getObject3D('mesh');
+      if (!mesh) return;
 
-        // Create a NEW BubbleSplit entity at the same transform
-        const split = document.createElement('a-entity');
-        split.setAttribute('gltf-model', '#bubbleSplitModel');
-        split.setAttribute('force-phong', '');
-        split.setAttribute('position', pos);
-        split.setAttribute('rotation', rot);
+      const materials = [];
 
-        const finalScale = {
-          x: scale.x * this.data.splitScaleMultiplier,
-          y: scale.y * this.data.splitScaleMultiplier,
-          z: scale.z * this.data.splitScaleMultiplier
-        };
-        split.setAttribute('scale', `${finalScale.x} ${finalScale.y} ${finalScale.z}`);
+      // Capture original opacity once
+      mesh.traverse(n => {
+        if (n.isMesh && n.material) {
+          const mat = n.material;
+          mat.transparent = true;
+          mat.depthWrite = false;
 
-        // Optional: play split animation once
-        split.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
-
-        parent.appendChild(split);
-      },
-
-      remove: function () {
-        const el = this.el;
-        el.removeEventListener('click', this.onInteract);
-        el.removeEventListener('touchstart', this.onInteract);
-      }
-    });
-
-    // --------- Random bubble ring ---------- 
-    AFRAME.registerComponent('random-bubble-ring', {
-      schema: {
-        count:        { default: 8 },
-        radius:       { default: 5 },
-        y:            { default: 0 },
-        scale:        { default: 9 },
-
-        radiusJitter: { default: 1.0 },
-        heightJitter: { default: 1.0 },
-        depthJitter:  { default: 1.2 },
-        scaleJitter:  { default: 0.9 }
-      },
-
-      init() {
-        const data = this.data;
-
-        for (let i = 0; i < data.count; i++) {
-          const angle = (i / data.count) * Math.PI * 2;
-
-          // radial position
-          const radialOffset = (Math.random() - 0.5) * data.radiusJitter;
-          const r = data.radius + radialOffset;
-          let x = Math.cos(angle) * r;
-          let z = Math.sin(angle) * r;
-
-          // depth jitter
-          const depthOffset = (Math.random() - 0.5) * data.depthJitter;
-          z += depthOffset;
-
-          // height jitter
-          const y = data.y + (Math.random() - 0.5) * data.heightJitter;
-
-          // scale jitter
-          const scaleFactor = 1 - data.scaleJitter / 2 + Math.random() * data.scaleJitter;
-          const finalScale = data.scale * scaleFactor;
-
-          const bubble = document.createElement('a-entity');
-          bubble.setAttribute('gltf-model', '#bubbleModel');
-          bubble.setAttribute('force-phong', '');
-          bubble.setAttribute('bubble-pop', ''); // every ring bubble is poppable
-          bubble.setAttribute('position', `${x} ${y} ${z}`);
-          bubble.setAttribute('scale', `${finalScale} ${finalScale} ${finalScale}`);
-
-          bubble.setAttribute(
-            'rotation',
-            `${(Math.random() - 0.5) * 20} ${(Math.random()*360).toFixed(1)} ${(Math.random() - 0.5) * 20}`
-          );
-
-          this.el.appendChild(bubble);
+          materials.push({
+            material: mat,
+            startOpacity:
+              (typeof mat.opacity === 'number') ? mat.opacity : 1
+          });
         }
+      });
+
+      const fadeDelay    = this.data.fadeDelay;    // ms
+      const fadeDuration = this.data.fadeDuration; // ms
+
+      const startFade = () => {
+        const startTime = performance.now();
+
+        const step = (now) => {
+          const t = Math.min((now - startTime) / fadeDuration, 1); // linear 0 → 1
+
+          materials.forEach(entry => {
+            // PURE linear fade from original opacity → 0
+            entry.material.opacity = entry.startOpacity * (1 - t);
+          });
+
+          if (t < 1) {
+            requestAnimationFrame(step);
+          } else {
+            if (splitEl.parentNode) {
+              splitEl.parentNode.removeChild(splitEl);
+            }
+          }
+        };
+
+        requestAnimationFrame(step);
+      };
+
+      if (fadeDelay > 0) {
+        setTimeout(startFade, fadeDelay);
+      } else {
+        startFade();
       }
-    });
+    },
+
+    remove: function () {
+      this.el.removeEventListener('click', this.onInteract);
+      this.el.removeEventListener('touchstart', this.onInteract);
+    }
+  });
+
+
+  // --------- Random bubble ring ---------- 
+  AFRAME.registerComponent('random-bubble-ring', {
+    schema: {
+      count:        { default: 8 },
+      radius:       { default: 5 },
+      y:            { default: 0 },
+      scale:        { default: 9 },
+
+      radiusJitter: { default: 1.0 },
+      heightJitter: { default: 1.0 },
+      depthJitter:  { default: 1.2 },
+      scaleJitter:  { default: 0.9 }
+    },
+
+    init() {
+      const data = this.data;
+
+      for (let i = 0; i < data.count; i++) {
+        const angle = (i / data.count) * Math.PI * 2;
+
+        // radial position
+        const radialOffset = (Math.random() - 0.5) * data.radiusJitter;
+        const r = data.radius + radialOffset;
+        let x = Math.cos(angle) * r;
+        let z = Math.sin(angle) * r;
+
+        // depth jitter
+        const depthOffset = (Math.random() - 0.5) * data.depthJitter;
+        z += depthOffset;
+
+        // height jitter
+        const y = data.y + (Math.random() - 0.5) * data.heightJitter;
+
+        // scale jitter
+        const scaleFactor = 1 - data.scaleJitter / 2 + Math.random() * data.scaleJitter;
+        const finalScale = data.scale * scaleFactor;
+
+        const bubble = document.createElement('a-entity');
+        bubble.setAttribute('gltf-model', '#bubbleModel');
+        bubble.setAttribute('force-phong', '');
+        bubble.setAttribute('bubble-pop', ''); // every ring bubble is poppable
+        bubble.setAttribute('position', `${x} ${y} ${z}`);
+        bubble.setAttribute('scale', `${finalScale} ${finalScale} ${finalScale}`);
+
+        bubble.setAttribute(
+          'rotation',
+          `${(Math.random() - 0.5) * 20} ${(Math.random()*360).toFixed(1)} ${(Math.random() - 0.5) * 20}`
+        );
+
+        this.el.appendChild(bubble);
+      }
+    }
+  });
   </script>
+
 </head>
 
 <body>
@@ -176,12 +250,14 @@
     renderer="logarithmicDepthBuffer:true;antialias:true;colorManagement:true;physicallyCorrectLights:true;toneMapping:ACESFilmic;exposure:1.9"
     arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled:false">
 
-    <!-- Camera with visible ring cursor and ray from mouse/touch -->
-    <a-camera cursor="rayOrigin: mouse; fuse: false"
-              raycaster="objects: .clickable; far: 100">
-      <a-entity geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.02"
-                material="color: #FFFFFF; shader: flat; opacity: 0.9"
-                position="0 0 -1">
+    <!-- Camera with FUSE cursor so bubbles pop when passing through the center ring -->
+    <a-camera>
+      <a-entity
+        cursor="rayOrigin: entity; fuse: true; fuseTimeout: 50"
+        raycaster="objects: .clickable; far: 100"
+        geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.02"
+        material="color: #FFFFFF; shader: flat; opacity: 0.9"
+        position="0 0 -1">
       </a-entity>
     </a-camera>
 
@@ -189,6 +265,7 @@
     <a-assets timeout="60000">
       <a-asset-item id="bubbleModel" src="wobble5.glb"></a-asset-item>
       <a-asset-item id="bubbleSplitModel" src="BubbleSplit.glb"></a-asset-item>
+      <audio id="popSound" src="bubble-pop-06-351337.mp3" preload="auto"></audio>
     </a-assets>
 
     <!-- Lights -->
@@ -212,12 +289,12 @@
       scale="1 1 1"
       animation__float="property: position.y; from:-0.8; to:0.8; dur:14000; dir:alternate; loop:true; easing:easeInOutSine">
 
-      <!-- Center bubble (also poppable) -->
+      <!-- Center bubble (also poppable when it passes through the ring) -->
       <a-entity gltf-model="#bubbleModel"
-                force-phong
-                bubble-pop
-                position="0 0 0"
-                scale="30 30 30">
+          force-phong
+          bubble-pop="fadeDelay: 3000; fadeDuration: 6000"
+          position="0 0 0"
+          scale="30 30 30">
       </a-entity>
 
       <!-- Outer ring -->
