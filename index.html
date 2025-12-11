@@ -6,9 +6,9 @@
 
   <!-- A-Frame + AR.js -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-  <!-- animation-mixer for BubbleSplit.glb -->
-  <script src="https://rawgit.com/donmccurdy/aframe-extras/v6.0.0/dist/aframe-extras.loaders.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.6/aframe/build/aframe-ar.min.js"></script>
+<script src="https://unpkg.com/aframe-extras@6.1.1/dist/aframe-extras.loaders.min.js"></script>
+
 
   <style>
     body { margin: 0; overflow: hidden; }
@@ -76,53 +76,58 @@
       this.popBubble();
     },
 
-    popBubble: function () {
-      if (this.popped) return;
-      this.popped = true;
+   popBubble: function () {
+  if (this.popped) return;
+  this.popped = true;
 
-      const el     = this.el;
-      const parent = el.parentNode;
-      if (!parent) return;
+  const el     = this.el;
+  const parent = el.parentNode;
+  if (!parent) return;
 
-      // Play the pop sound
-      const popSound = document.querySelector('#popSound');
-      if (popSound) {
-        const soundClone = popSound.cloneNode();
-        soundClone.volume = 0.7;
-        soundClone.play().catch(e => console.log('Sound play failed:', e));
-      }
+  // Play the pop sound (reusable)
+  const popSound = document.querySelector('#popSound');
+  if (popSound) {
+    try {
+      popSound.currentTime = 0;   // rewind
+      popSound.volume = 0.7;
+      popSound.play().catch(e => console.log('Sound play failed:', e));
+    } catch (e) {
+      console.log('Audio error:', e);
+    }
+  }
 
-      const pos   = el.getAttribute('position');
-      const rot   = el.getAttribute('rotation');
-      const scale = el.getAttribute('scale');
+  const pos   = el.getAttribute('position');
+  const rot   = el.getAttribute('rotation');
+  const scale = el.getAttribute('scale');
 
-      // Hide the original bubble
-      el.setAttribute('visible', false);
+  // Hide the original bubble
+  el.setAttribute('visible', false);
 
-      // Create a NEW BubbleSplit entity at the same transform
-      const split = document.createElement('a-entity');
-      split.setAttribute('gltf-model', '#bubbleSplitModel');
-      split.setAttribute('force-phong', '');
-      split.setAttribute('position', pos);
-      split.setAttribute('rotation', rot);
+  // Create a NEW BubbleSplit entity at the same transform
+  const split = document.createElement('a-entity');
+  split.setAttribute('gltf-model', '#bubbleSplitModel');
+  split.setAttribute('force-phong', '');
+  split.setAttribute('position', pos);
+  split.setAttribute('rotation', rot);
 
-      const finalScale = {
-        x: scale.x * this.data.splitScaleMultiplier,
-        y: scale.y * this.data.splitScaleMultiplier,
-        z: scale.z * this.data.splitScaleMultiplier
-      };
-      split.setAttribute('scale', `${finalScale.x} ${finalScale.y} ${finalScale.z}`);
+  const finalScale = {
+    x: scale.x * this.data.splitScaleMultiplier,
+    y: scale.y * this.data.splitScaleMultiplier,
+    z: scale.z * this.data.splitScaleMultiplier
+  };
+  split.setAttribute('scale', `${finalScale.x} ${finalScale.y} ${finalScale.z}`);
 
-      // Play split animation once
-      split.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
+  // Play split animation once
+  split.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
 
-      parent.appendChild(split);
+  parent.appendChild(split);
 
-      // When the model is ready, schedule the fade
-      split.addEventListener('model-loaded', () => {
-        this.startSplitFade(split);
-      });
-    },
+  // When the model is ready, schedule the fade
+  split.addEventListener('model-loaded', () => {
+    this.startSplitFade(split);
+  });
+}
+
 
     // Fade from each material's *current* opacity → 0, with a soft ease
     startSplitFade: function (splitEl) {
@@ -247,7 +252,7 @@
   <a-scene
     embedded
     vr-mode-ui="enabled:false"
-    renderer="logarithmicDepthBuffer:true;antialias:true;colorManagement:true;physicallyCorrectLights:true;toneMapping:ACESFilmic;exposure:1.9"
+    renderer="antialias:true; colorManagement:true"
     arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled:false">
 
     <!-- Camera with FUSE cursor so bubbles pop when passing through the center ring -->
