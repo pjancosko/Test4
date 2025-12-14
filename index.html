@@ -230,7 +230,7 @@
     }
   });
 
-  // --------- Bubble-pop: hide bubble, spawn BubbleSplit.glb, then fade split ----------
+  // --------- Bubble-pop: hide bubble, spawn random split model, then fade split ----------
   AFRAME.registerComponent('bubble-pop', {
     schema: {
       splitScaleMultiplier: { default: 1.5 },  
@@ -244,6 +244,9 @@
       this.onInteract = this.onInteract.bind(this);
       this.el.addEventListener('click', this.onInteract);
       this.el.addEventListener('touchstart', this.onInteract);
+      
+      // Array of split model IDs
+      this.splitModels = ['#splitModel1', '#splitModel2', '#splitModel3'];
     },
 
     onInteract: function () {
@@ -268,9 +271,12 @@
       // Hide the original bubble
       el.setAttribute('visible', false);
 
-      // Create a NEW BubbleSplit entity at the same transform
+      // Randomly select one of the three split models
+      const randomSplitModel = this.splitModels[Math.floor(Math.random() * this.splitModels.length)];
+      
+      // Create a NEW split entity with random model
       const split = document.createElement('a-entity');
-      split.setAttribute('gltf-model', '#bubbleSplitModel');
+      split.setAttribute('gltf-model', randomSplitModel);
       split.setAttribute('force-phong', '');
       split.setAttribute('position', pos);
       split.setAttribute('rotation', rot);
@@ -434,8 +440,11 @@
 
     <!-- Assets -->
     <a-assets timeout="60000">
-      <a-asset-item id="bubbleModel" src="lowpoly_bubble.glb"></a-asset-item>
-      <a-asset-item id="bubbleSplitModel" src="low_polysplit.glb"></a-asset-item>
+      <a-asset-item id="bubbleModel" src="20polybubble.glb"></a-asset-item>
+      <!-- Three different split models -->
+      <a-asset-item id="splitModel1" src="split1.glb"></a-asset-item>
+      <a-asset-item id="splitModel2" src="split2.glb"></a-asset-item>
+      <a-asset-item id="splitModel3" src="split3.glb"></a-asset-item>
       <audio id="popSound" src="bubble-pop-06-351337.mp3" preload="auto"></audio>
     </a-assets>
 
