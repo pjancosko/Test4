@@ -1,319 +1,341 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Bubble Sculpture (AR.js + Faster Start)</title>
+  <meta charset="utf-8">
+  <title>Bubble Sculpture (Spinning Rings, Interactive)</title>
 
-  <!-- Load libs from stable, pinned CDNs (avoid "master") -->
-  <script defer src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.6/aframe/build/aframe-ar.min.js"></script>
-  <script defer src="https://unpkg.com/aframe-extras@6.1.1/dist/aframe-extras.loaders.min.js"></script>
+  <!-- A-Frame + AR.js -->
+  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@master/aframe/build/aframe-ar.js"></script>
+  <!-- animation-mixer for BubbleSplit.glb -->
+  <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.0.0/dist/aframe-extras.loaders.min.js"></script>
 
   <style>
-    html, body { margin:0; height:100%; overflow:hidden; background:#000; font-family: system-ui, Arial; }
-    #ui {
-      position: fixed; inset: 0; display:flex; align-items:center; justify-content:center;
-      background: linear-gradient(180deg, rgba(0,0,0,.85), rgba(0,0,0,.65));
-      z-index: 10;
-    }
-    #panel {
-      width: min(520px, 92vw);
-      padding: 18px 16px;
-      border-radius: 16px;
-      background: rgba(20,20,24,.8);
-      color: #fff;
-      box-shadow: 0 16px 50px rgba(0,0,0,.45);
-    }
-    #panel h1 { font-size: 18px; margin: 0 0 8px; font-weight: 650; }
-    #panel p { font-size: 14px; margin: 0 0 12px; opacity: .9; line-height: 1.35; }
-    #startBtn {
-      appearance: none; border: 0; border-radius: 12px; padding: 12px 14px;
-      font-size: 15px; font-weight: 650; cursor: pointer;
-    }
-    #hint { margin-top: 10px; font-size: 12px; opacity: .75; }
+    body { margin: 0; overflow: hidden; }
   </style>
 
   <script>
-  // Wait for AFRAME to be ready (scripts are deferred)
-  window.addEventListener('DOMContentLoaded', () => {
-    // ---------- Shared Phong Material (BIG performance win) ----------
-    AFRAME.registerComponent('force-phong-shared', {
-      schema: {
-        shininess:   { default: 180 },
-        opacity:     { default: 0.08 },
-        color:       { default: '#222244' },
-        emissive:    { default: '#060a2e' }
-      },
-      init() {
-        // Create ONE shared material instance
-        const d = this.data;
-        this.sharedMat = new THREE.MeshPhongMaterial({
-          color: new THREE.Color(d.color),
-          emissive: new THREE.Color(d.emissive),
-          specular: 0xffffff,
-          shininess: d.shininess,
-          transparent: true,
-          opacity: d.opacity,
-          side: THREE.DoubleSide,
-          depthWrite: false
-        });
+  // --------- Force Phong on all GLTF meshes ---------- 
+  AFRAME.registerComponent('force-phong', {
+    schema: {
+      shininess:   { default: 180 },
+      baseOpacity: { default: 0.08 }
+    },
+    init () {
+      this.el.addEventListener('model-loaded', () => {
+        const obj = this.el.getObject3D('mesh');
+        if (!obj) return;
 
-        this.el.addEventListener('model-loaded', () => {
-          const obj = this.el.getObject3D('mesh');
-          if (!obj) return;
-
-          obj.traverse(n => {
-            if (!n.isMesh) return;
-            n.material = this.sharedMat;     // reuse material (no per-mesh allocations)
-            n.material.needsUpdate = true;
-          });
-        });
-      }
-    });
-
-    // ---------- Bubble pop (unchanged, but uses shared phong) ----------
-    AFRAME.registerComponent('bubble-pop', {
-      schema: {
-        splitScaleMultiplier: { default: 1.5 },
-        fadeDelay:            { default: 3000 },
-        fadeDuration:         { default: 3000 }
-      },
-      init() {
-        this.popped = false;
-        this.el.classList.add('clickable');
-        this.onInteract = this.onInteract.bind(this);
-        this.el.addEventListener('click', this.onInteract);
-        this.el.addEventListener('touchstart', this.onInteract);
-      },
-      onInteract() { this.popBubble(); },
-
-      popBubble() {
-        if (this.popped) return;
-        this.popped = true;
-
-        const el = this.el;
-        const parent = el.parentNode;
-        if (!parent) return;
-
-        // Sound (user gesture from click/touchstart helps)
-        const popSound = document.querySelector('#popSound');
-        if (popSound) {
-          const s = popSound.cloneNode();
-          s.volume = 0.7;
-          s.play().catch(()=>{});
-        }
-
-        const pos   = el.getAttribute('position');
-        const rot   = el.getAttribute('rotation');
-        const scale = el.getAttribute('scale');
-
-        el.setAttribute('visible', false);
-
-        const split = document.createElement('a-entity');
-        split.setAttribute('gltf-model', '#bubbleSplitModel');
-        split.setAttribute('force-phong-shared', '');
-        split.setAttribute('position', pos);
-        split.setAttribute('rotation', rot);
-
-        const finalScale = {
-          x: scale.x * this.data.splitScaleMultiplier,
-          y: scale.y * this.data.splitScaleMultiplier,
-          z: scale.z * this.data.splitScaleMultiplier
-        };
-        split.setAttribute('scale', `${finalScale.x} ${finalScale.y} ${finalScale.z}`);
-
-        split.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
-        parent.appendChild(split);
-
-        split.addEventListener('model-loaded', () => this.startSplitFade(split));
-      },
-
-      startSplitFade(splitEl) {
-        const mesh = splitEl.getObject3D('mesh');
-        if (!mesh) return;
-
-        const mats = [];
-        mesh.traverse(n => {
+        obj.traverse(n => {
           if (!n.isMesh || !n.material) return;
-          n.material.transparent = true;
-          n.material.depthWrite = false;
-          mats.push({ material: n.material, startOpacity: (typeof n.material.opacity === 'number') ? n.material.opacity : 1 });
+
+          const base = n.material;
+          const phong = new THREE.MeshPhongMaterial({
+            color:       0x222244,
+            emissive:    0x060a2e,
+            specular:    0xffffff,
+            shininess:   this.data.shininess,
+            transparent: true,
+            opacity:     (typeof base.opacity === 'number')
+                           ? base.opacity
+                           : this.data.baseOpacity,
+            side:        THREE.DoubleSide,
+            depthWrite:  false
+          });
+
+          if (base.map)       phong.map       = base.map;
+          if (base.normalMap) phong.normalMap = base.normalMap;
+
+          n.material = phong;
+          n.material.needsUpdate = true;
         });
+      });
+    }
+  });
 
-        const fadeDelay = this.data.fadeDelay;
-        const fadeDuration = this.data.fadeDuration;
+  // --------- Bubble-pop: hide bubble, spawn BubbleSplit.glb, then fade split ----------
+  AFRAME.registerComponent('bubble-pop', {
+    schema: {
+      splitScaleMultiplier: { default: 1.5 },  
+      fadeDelay:            { default: 3000 }, 
+      fadeDuration:         { default: 3000 }  
+    },
 
-        const startFade = () => {
-          const start = performance.now();
-          const step = (now) => {
-            const t = Math.min((now - start) / fadeDuration, 1);
-            mats.forEach(m => m.material.opacity = m.startOpacity * (1 - t));
-            if (t < 1) requestAnimationFrame(step);
-            else splitEl.parentNode && splitEl.parentNode.removeChild(splitEl);
-          };
-          requestAnimationFrame(step);
+    init: function () {
+      // Initialize audio pool if not exists
+      if (!window.audioPool) {
+        window.audioPool = [];
+        for (let i = 0; i < 10; i++) {
+          const audio = new Audio('bubble-pop-06-351337.mp3');
+          audio.volume = 0.7;
+          window.audioPool.push(audio);
+        }
+      }
+
+      this.popped = false;
+
+      // Make this entity hittable by the raycaster
+      this.el.classList.add('clickable');
+
+      this.onInteract = this.onInteract.bind(this);
+      this.el.addEventListener('click', this.onInteract);
+      this.el.addEventListener('touchstart', this.onInteract);
+    },
+
+    onInteract: function () {
+      this.popBubble();
+    },
+
+    popBubble: function () {
+      if (this.popped) return;
+      this.popped = true;
+
+      const el     = this.el;
+      const parent = el.parentNode;
+      if (!parent) return;
+
+      // Play pop sound from pool
+      const availableAudio = window.audioPool.find(a => a.paused);
+      if (availableAudio) {
+        availableAudio.currentTime = 0;
+        availableAudio.play().catch(e => console.log('Audio needs user interaction first'));
+      } else {
+        // All audio playing, clone one
+        const tempAudio = new Audio('bubble-pop-06-351337.mp3');
+        tempAudio.volume = 0.7;
+        tempAudio.play().catch(e => console.log('Audio needs user interaction first'));
+      }
+
+      const pos   = el.getAttribute('position');
+      const rot   = el.getAttribute('rotation');
+      const scale = el.getAttribute('scale');
+
+      // Hide the original bubble
+      el.setAttribute('visible', false);
+
+      // Create a NEW BubbleSplit entity at the same transform
+      const split = document.createElement('a-entity');
+      split.setAttribute('gltf-model', '#bubbleSplitModel');
+      split.setAttribute('force-phong', '');
+      split.setAttribute('position', pos);
+      split.setAttribute('rotation', rot);
+
+      const finalScale = {
+        x: scale.x * this.data.splitScaleMultiplier,
+        y: scale.y * this.data.splitScaleMultiplier,
+        z: scale.z * this.data.splitScaleMultiplier
+      };
+      split.setAttribute('scale', `${finalScale.x} ${finalScale.y} ${finalScale.z}`);
+
+      // Play split animation once
+      split.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
+
+      parent.appendChild(split);
+
+      // When the model is ready, schedule the fade
+      split.addEventListener('model-loaded', () => {
+        this.startSplitFade(split);
+      });
+    },
+
+    // Fade from each material's *current* opacity → 0, with a soft ease
+    startSplitFade: function (splitEl) {
+      const mesh = splitEl.getObject3D('mesh');
+      if (!mesh) return;
+
+      const materials = [];
+
+      // Capture original opacity once
+      mesh.traverse(n => {
+        if (n.isMesh && n.material) {
+          const mat = n.material;
+          mat.transparent = true;
+          mat.depthWrite = false;
+
+          materials.push({
+            material: mat,
+            startOpacity:
+              (typeof mat.opacity === 'number') ? mat.opacity : 1
+          });
+        }
+      });
+
+      const fadeDelay    = this.data.fadeDelay;    
+      const fadeDuration = this.data.fadeDuration; 
+
+      const startFade = () => {
+        const startTime = performance.now();
+
+        const step = (now) => {
+          const t = Math.min((now - startTime) / fadeDuration, 1); 
+
+          materials.forEach(entry => {
+            entry.material.opacity = entry.startOpacity * (1 - t);
+          });
+
+          if (t < 1) {
+            requestAnimationFrame(step);
+          } else {
+            if (splitEl.parentNode) {
+              splitEl.parentNode.removeChild(splitEl);
+            }
+          }
         };
 
-        fadeDelay > 0 ? setTimeout(startFade, fadeDelay) : startFade();
-      },
+        requestAnimationFrame(step);
+      };
 
-      remove() {
-        this.el.removeEventListener('click', this.onInteract);
-        this.el.removeEventListener('touchstart', this.onInteract);
+      if (fadeDelay > 0) {
+        setTimeout(startFade, fadeDelay);
+      } else {
+        startFade();
       }
-    });
+    },
 
-    // ---------- Ring spawner: STAGGER bubble creation to avoid “27 at once” ----------
-    AFRAME.registerComponent('stagger-bubble-ring', {
-      schema: {
-        count:        { default: 8 },
-        radius:       { default: 5 },
-        y:            { default: 0 },
-        scale:        { default: 9 },
+    remove: function () {
+      this.el.removeEventListener('click', this.onInteract);
+      this.el.removeEventListener('touchstart', this.onInteract);
+    }
+  });
 
-        radiusJitter: { default: 1.0 },
-        heightJitter: { default: 1.0 },
-        depthJitter:  { default: 1.2 },
-        scaleJitter:  { default: 0.9 },
 
-        spawnEveryMs: { default: 120 } // stagger interval
-      },
+  // --------- Random bubble ring ---------- 
+  AFRAME.registerComponent('random-bubble-ring', {
+    schema: {
+      count:        { default: 8 },
+      radius:       { default: 5 },
+      y:            { default: 0 },
+      scale:        { default: 9 },
 
-      init() {
-        const d = this.data;
-        let i = 0;
+      radiusJitter: { default: 1.0 },
+      heightJitter: { default: 1.0 },
+      depthJitter:  { default: 1.2 },
+      scaleJitter:  { default: 0.9 }
+    },
 
-        const spawnOne = () => {
-          if (i >= d.count) return;
+    init() {
+      const data = this.data;
 
-          const angle = (i / d.count) * Math.PI * 2;
+      for (let i = 0; i < data.count; i++) {
+        const angle = (i / data.count) * Math.PI * 2;
 
-          const radialOffset = (Math.random() - 0.5) * d.radiusJitter;
-          const r = d.radius + radialOffset;
+        // radial position
+        const radialOffset = (Math.random() - 0.5) * data.radiusJitter;
+        const r = data.radius + radialOffset;
+        let x = Math.cos(angle) * r;
+        let z = Math.sin(angle) * r;
 
-          let x = Math.cos(angle) * r;
-          let z = Math.sin(angle) * r;
+        // depth jitter
+        const depthOffset = (Math.random() - 0.5) * data.depthJitter;
+        z += depthOffset;
 
-          const depthOffset = (Math.random() - 0.5) * d.depthJitter;
-          z += depthOffset;
+        // height jitter
+        const y = data.y + (Math.random() - 0.5) * data.heightJitter;
 
-          const y = d.y + (Math.random() - 0.5) * d.heightJitter;
+        // scale jitter
+        const scaleFactor = 1 - data.scaleJitter / 2 + Math.random() * data.scaleJitter;
+        const finalScale = data.scale * scaleFactor;
 
-          const scaleFactor = 1 - d.scaleJitter / 2 + Math.random() * d.scaleJitter;
-          const s = d.scale * scaleFactor;
+        const bubble = document.createElement('a-entity');
+        bubble.setAttribute('gltf-model', '#bubbleModel');
+        bubble.setAttribute('force-phong', '');
+        bubble.setAttribute('bubble-pop', ''); 
+        bubble.setAttribute('position', `${x} ${y} ${z}`);
+        bubble.setAttribute('scale', `${finalScale} ${finalScale} ${finalScale}`);
 
-          const bubble = document.createElement('a-entity');
-          bubble.setAttribute('gltf-model', '#bubbleModel');
-          bubble.setAttribute('force-phong-shared', '');
-          bubble.setAttribute('bubble-pop', '');
-          bubble.setAttribute('position', `${x} ${y} ${z}`);
-          bubble.setAttribute('scale', `${s} ${s} ${s}`);
-          bubble.setAttribute('rotation',
-            `${(Math.random() - 0.5) * 20} ${(Math.random() * 360).toFixed(1)} ${(Math.random() - 0.5) * 20}`
-          );
+        bubble.setAttribute(
+          'rotation',
+          `${(Math.random() - 0.5) * 20} ${(Math.random()*360).toFixed(1)} ${(Math.random() - 0.5) * 20}`
+        );
 
-          this.el.appendChild(bubble);
-          i++;
-          setTimeout(spawnOne, d.spawnEveryMs);
-        };
-
-        spawnOne();
+        this.el.appendChild(bubble);
       }
-    });
-
-    // ---------- Create the AR scene only after user clicks (perceived speed boost) ----------
-    document.getElementById('startBtn').addEventListener('click', () => {
-      document.getElementById('ui').style.display = 'none';
-      mountScene();
-    });
-
-    function mountScene() {
-      const host = document.getElementById('sceneHost');
-
-      host.innerHTML = `
-<a-scene
-  embedded
-  vr-mode-ui="enabled:false"
-  renderer="logarithmicDepthBuffer:true;antialias:true;colorManagement:true;physicallyCorrectLights:true;toneMapping:ACESFilmic;exposure:1.9"
-  arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled:false;">
-
-  <a-assets timeout="60000">
-    <!-- Use YOUR filenames exactly -->
-    <a-asset-item id="bubbleModel" src="lowpoly_bubble.glb"></a-asset-item>
-    <a-asset-item id="bubbleSplitModel" src="low_polysplit.glb"></a-asset-item>
-    <audio id="popSound" src="bubble-pop-06-351337.mp3" preload="auto"></audio>
-  </a-assets>
-
-  <!-- Camera + tiny fuse cursor -->
-  <a-camera>
-    <a-entity
-      cursor="rayOrigin: entity; fuse: true; fuseTimeout: 50"
-      raycaster="objects: .clickable; far: 100"
-      geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.02"
-      material="color: #FFFFFF; shader: flat; opacity: 0.9"
-      position="0 0 -1">
-    </a-entity>
-  </a-camera>
-
-  <!-- KEEP your lights -->
-  <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
-  <a-entity position="1 2 -1"  light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
-  <a-entity position="-2 2 1"  light="type:directional; intensity:8; color:#E65E63"></a-entity>
-  <a-entity position="0.5 0.6 -0.8" light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
-  <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
-
-  <!-- Sculpture -->
-  <a-entity
-    id="bubble-sculpture"
-    position="0 -0.5 -6"
-    animation__float="property: position.y; from:-0.8; to:0.8; dur:14000; dir:alternate; loop:true; easing:easeInOutSine">
-
-    <a-entity gltf-model="#bubbleModel"
-      force-phong-shared
-      bubble-pop="fadeDelay: 3000; fadeDuration: 6000"
-      position="0 0 0"
-      scale="30 30 30">
-    </a-entity>
-
-    <a-entity id="ring-outer"
-      animation__spin="property: rotation.y; to:360; loop:true; dur:50000; easing:linear"
-      stagger-bubble-ring="count:10; radius:3; y:0; scale:12;
-        radiusJitter:1.5; heightJitter:1.2; depthJitter:1.5; scaleJitter:0.8; spawnEveryMs:140">
-    </a-entity>
-
-    <a-entity id="ring-upper"
-      animation__spin="property: rotation.y; to:-360; loop:true; dur:60000; easing:linear"
-      stagger-bubble-ring="count:8; radius:2.6; y:2.0; scale:12;
-        radiusJitter:0.8; heightJitter:0.8; depthJitter:1.0; scaleJitter:0.4; spawnEveryMs:160">
-    </a-entity>
-
-    <a-entity id="ring-lower"
-      animation__spin="property: rotation.y; to:360; loop:true; dur:55000; easing:linear"
-      stagger-bubble-ring="count:8; radius:2.4; y:-2.0; scale:12;
-        radiusJitter:1.0; heightJitter:1.0; depthJitter:1.3; scaleJitter:0.6; spawnEveryMs:160">
-    </a-entity>
-
-  </a-entity>
-</a-scene>
-      `;
     }
   });
   </script>
+
 </head>
 
 <body>
-  <!-- Start overlay -->
-  <div id="ui">
-    <div id="panel">
-      <h1>Bubble Sculpture AR</h1>
-      <p>Tap <b>Start AR</b> to request camera permission, then bubbles will spawn gradually so the scene doesn’t hitch.</p>
-      <button id="startBtn">Start AR</button>
-      <div id="hint">If it’s still slow on first load, it’s usually AR.js camera init + shader compilation (your lights are heavy, which is okay).</div>
-    </div>
-  </div>
+  <a-scene
+    embedded
+    vr-mode-ui="enabled:false"
+    renderer="antialias:true;colorManagement:true;toneMapping:ACESFilmic;exposure:1.9"
+    arjs="sourceType: webcam; sourceWidth:640; sourceHeight:480; displayWidth: 640; displayHeight: 480; debugUIEnabled:false">
 
-  <!-- Scene mounts here after click -->
-  <div id="sceneHost"></div>
+    <!-- Camera with FUSE cursor so bubbles pop when passing through the center ring -->
+    <a-camera>
+      <a-entity
+        cursor="rayOrigin: entity; fuse: true; fuseTimeout: 50"
+        raycaster="objects: .clickable; far: 100"
+        geometry="primitive: ring; radiusInner: 0.01; radiusOuter: 0.02"
+        material="color: #FFFFFF; shader: flat; opacity: 0.9"
+        position="0 0 -1">
+      </a-entity>
+    </a-camera>
+
+    <!-- Assets -->
+    <a-assets timeout="60000">
+      <a-asset-item id="bubbleModel" src="lowpoly_bubble.glb"></a-asset-item>
+      <a-asset-item id="bubbleSplitModel" src="low_polysplit.glb"></a-asset-item>
+      <audio id="popSound" src="bubble-pop-06-351337.mp3" preload="auto"></audio>
+    </a-assets>
+
+    <!-- Lights -->
+    <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
+
+    <a-entity position="1 2 -1"
+              light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
+
+    <a-entity position="-2 2 1"
+              light="type:directional; intensity:8; color:#E65E63"></a-entity>
+
+    <a-entity position="0.5 0.6 -0.8"
+              light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
+
+    <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
+
+    <!-- Floating + spinning bubble sculpture -->
+    <a-entity
+      id="bubble-sculpture"
+      position="0 -0.5 -6"
+      scale="1 1 1"
+      animation__float="property: position.y; from:-0.8; to:0.8; dur:14000; dir:alternate; loop:true; easing:easeInOutSine">
+
+      <!-- Center bubble (also poppable when it passes through the ring) -->
+      <a-entity gltf-model="#bubbleModel"
+          force-phong
+          bubble-pop="fadeDelay: 3000; fadeDuration: 6000"
+          position="0 0 0"
+          scale="30 30 30">
+      </a-entity>
+
+      <!-- Outer ring -->
+      <a-entity
+        id="ring-outer"
+        animation__spin="property: rotation.y; to:360; loop:true; dur:50000; easing:linear"
+        random-bubble-ring="count:10; radius:3; y:0; scale:12;
+                            radiusJitter:1.5; heightJitter:1.2; depthJitter:1.5; scaleJitter:0.8">
+      </a-entity>
+
+      <!-- Upper ring -->
+      <a-entity
+        id="ring-upper"
+        animation__spin="property: rotation.y; to:-360; loop:true; dur:60000; easing:linear"
+        random-bubble-ring="count:8; radius:2.6; y:2.0; scale:12;
+                            radiusJitter:0.8; heightJitter:0.8; depthJitter:1.0; scaleJitter:0.4">
+      </a-entity>
+
+      <!-- Lower ring -->
+      <a-entity
+        id="ring-lower"
+        animation__spin="property: rotation.y; to:360; loop:true; dur:55000; easing:linear"
+        random-bubble-ring="count:8; radius:2.4; y:-2.0; scale:12;
+                            radiusJitter:1.0; heightJitter:1.0; depthJitter:1.3; scaleJitter:0.6">
+      </a-entity>
+
+    </a-entity>
+
+  </a-scene>
 </body>
 </html>
