@@ -6,10 +6,9 @@
 
   <!-- A-Frame + AR.js -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
- <script defer src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.6/aframe/build/aframe-ar.min.js"></script>
-
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@master/aframe/build/aframe-ar.js"></script>
   <!-- animation-mixer for BubbleSplit.glb -->
-  <script src="https://rawgit.com/donmccurdy/aframe-extras/v6.0.0/dist/aframe-extras.loaders.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.0.0/dist/aframe-extras.loaders.min.js"></script>
 
   <style>
     body { margin: 0; overflow: hidden; }
@@ -57,12 +56,22 @@
   // --------- Bubble-pop: hide bubble, spawn BubbleSplit.glb, then fade split ----------
   AFRAME.registerComponent('bubble-pop', {
     schema: {
-      splitScaleMultiplier: { default: 1.5 },  // BubbleSplit a bit larger
-      fadeDelay:            { default: 3000 }, // ms before fade starts (let anim play)
-      fadeDuration:         { default: 3000 }  // ms for fade-out
+      splitScaleMultiplier: { default: 1.5 },  
+      fadeDelay:            { default: 3000 }, 
+      fadeDuration:         { default: 3000 }  
     },
 
     init: function () {
+      // Initialize audio pool if not exists
+      if (!window.audioPool) {
+        window.audioPool = [];
+        for (let i = 0; i < 10; i++) {
+          const audio = new Audio('bubble-pop-06-351337.mp3');
+          audio.volume = 0.7;
+          window.audioPool.push(audio);
+        }
+      }
+
       this.popped = false;
 
       // Make this entity hittable by the raycaster
@@ -85,12 +94,16 @@
       const parent = el.parentNode;
       if (!parent) return;
 
-      // Play the pop sound
-      const popSound = document.querySelector('#popSound');
-      if (popSound) {
-        const soundClone = popSound.cloneNode();
-        soundClone.volume = 0.7;
-        soundClone.play().catch(e => console.log('Sound play failed:', e));
+      // Play pop sound from pool
+      const availableAudio = window.audioPool.find(a => a.paused);
+      if (availableAudio) {
+        availableAudio.currentTime = 0;
+        availableAudio.play().catch(e => console.log('Audio needs user interaction first'));
+      } else {
+        // All audio playing, clone one
+        const tempAudio = new Audio('bubble-pop-06-351337.mp3');
+        tempAudio.volume = 0.7;
+        tempAudio.play().catch(e => console.log('Audio needs user interaction first'));
       }
 
       const pos   = el.getAttribute('position');
@@ -147,17 +160,16 @@
         }
       });
 
-      const fadeDelay    = this.data.fadeDelay;    // ms
-      const fadeDuration = this.data.fadeDuration; // ms
+      const fadeDelay    = this.data.fadeDelay;    
+      const fadeDuration = this.data.fadeDuration; 
 
       const startFade = () => {
         const startTime = performance.now();
 
         const step = (now) => {
-          const t = Math.min((now - startTime) / fadeDuration, 1); // linear 0 → 1
+          const t = Math.min((now - startTime) / fadeDuration, 1); 
 
           materials.forEach(entry => {
-            // PURE linear fade from original opacity → 0
             entry.material.opacity = entry.startOpacity * (1 - t);
           });
 
@@ -227,7 +239,7 @@
         const bubble = document.createElement('a-entity');
         bubble.setAttribute('gltf-model', '#bubbleModel');
         bubble.setAttribute('force-phong', '');
-        bubble.setAttribute('bubble-pop', ''); // every ring bubble is poppable
+        bubble.setAttribute('bubble-pop', ''); 
         bubble.setAttribute('position', `${x} ${y} ${z}`);
         bubble.setAttribute('scale', `${finalScale} ${finalScale} ${finalScale}`);
 
@@ -248,8 +260,8 @@
   <a-scene
     embedded
     vr-mode-ui="enabled:false"
-    renderer="logarithmicDepthBuffer:true;antialias:true;colorManagement:true;physicallyCorrectLights:true;toneMapping:ACESFilmic;exposure:1.9"
-    arjs="trackingMethod: best; sourceType: webcam; debugUIEnabled:false">
+    renderer="antialias:true;colorManagement:true;toneMapping:ACESFilmic;exposure:1.9"
+    arjs="sourceType: webcam; sourceWidth:640; sourceHeight:480; displayWidth: 640; displayHeight: 480; debugUIEnabled:false">
 
     <!-- Camera with FUSE cursor so bubbles pop when passing through the center ring -->
     <a-camera>
