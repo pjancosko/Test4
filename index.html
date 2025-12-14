@@ -7,14 +7,86 @@
   <!-- A-Frame + AR.js -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@master/aframe/build/aframe-ar.js"></script>
-  <!-- animation-mixer for BubbleSplit.glb -->
   <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.0.0/dist/aframe-extras.loaders.min.js"></script>
 
   <style>
     body { margin: 0; overflow: hidden; }
+    
+    /* Start button overlay */
+    #startButton {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px 40px;
+      font-size: 24px;
+      background: rgba(250, 122, 174, 0.9);
+      color: white;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      z-index: 9999;
+      font-family: Arial, sans-serif;
+    }
   </style>
 
   <script>
+  // Global audio context for mobile
+  let audioContext;
+  let audioBufferSource;
+  let audioBuffer;
+  
+  // Initialize audio on user interaction
+  function initAudio() {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // Load the pop sound into buffer
+    fetch('bubble-pop-06-351337.mp3')
+      .then(response => response.arrayBuffer())
+      .then(data => audioContext.decodeAudioData(data))
+      .then(buffer => {
+        audioBuffer = buffer;
+        console.log('Audio loaded and ready');
+      })
+      .catch(e => console.error('Audio load error:', e));
+      
+    // Also prepare HTML audio pool as backup
+    if (!window.audioPool) {
+      window.audioPool = [];
+      for (let i = 0; i < 10; i++) {
+        const audio = new Audio('bubble-pop-06-351337.mp3');
+        audio.volume = 0.7;
+        // Force load on mobile
+        audio.load();
+        window.audioPool.push(audio);
+      }
+    }
+    
+    // Hide start button
+    const btn = document.getElementById('startButton');
+    if (btn) btn.style.display = 'none';
+  }
+  
+  // Play sound using Web Audio API (works better on mobile)
+  function playPopSound() {
+    if (audioContext && audioBuffer) {
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      const gainNode = audioContext.createGain();
+      gainNode.gain.value = 0.7;
+      source.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      source.start(0);
+    } else {
+      // Fallback to HTML audio
+      const availableAudio = window.audioPool && window.audioPool.find(a => a.paused);
+      if (availableAudio) {
+        availableAudio.currentTime = 0;
+        availableAudio.play().catch(e => console.log('Audio fallback failed'));
+      }
+    }
+  }
+
   // --------- Force Phong on all GLTF meshes ---------- 
   AFRAME.registerComponent('force-phong', {
     schema: {
@@ -62,21 +134,8 @@
     },
 
     init: function () {
-      // Initialize audio pool if not exists
-      if (!window.audioPool) {
-        window.audioPool = [];
-        for (let i = 0; i < 10; i++) {
-          const audio = new Audio('bubble-pop-06-351337.mp3');
-          audio.volume = 0.7;
-          window.audioPool.push(audio);
-        }
-      }
-
       this.popped = false;
-
-      // Make this entity hittable by the raycaster
       this.el.classList.add('clickable');
-
       this.onInteract = this.onInteract.bind(this);
       this.el.addEventListener('click', this.onInteract);
       this.el.addEventListener('touchstart', this.onInteract);
@@ -94,17 +153,8 @@
       const parent = el.parentNode;
       if (!parent) return;
 
-      // Play pop sound from pool
-      const availableAudio = window.audioPool.find(a => a.paused);
-      if (availableAudio) {
-        availableAudio.currentTime = 0;
-        availableAudio.play().catch(e => console.log('Audio needs user interaction first'));
-      } else {
-        // All audio playing, clone one
-        const tempAudio = new Audio('bubble-pop-06-351337.mp3');
-        tempAudio.volume = 0.7;
-        tempAudio.play().catch(e => console.log('Audio needs user interaction first'));
-      }
+      // Play sound using our Web Audio API function
+      playPopSound();
 
       const pos   = el.getAttribute('position');
       const rot   = el.getAttribute('rotation');
@@ -127,25 +177,20 @@
       };
       split.setAttribute('scale', `${finalScale.x} ${finalScale.y} ${finalScale.z}`);
 
-      // Play split animation once
       split.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
-
       parent.appendChild(split);
 
-      // When the model is ready, schedule the fade
       split.addEventListener('model-loaded', () => {
         this.startSplitFade(split);
       });
     },
 
-    // Fade from each material's *current* opacity → 0, with a soft ease
     startSplitFade: function (splitEl) {
       const mesh = splitEl.getObject3D('mesh');
       if (!mesh) return;
 
       const materials = [];
 
-      // Capture original opacity once
       mesh.traverse(n => {
         if (n.isMesh && n.material) {
           const mat = n.material;
@@ -198,7 +243,6 @@
     }
   });
 
-
   // --------- Random bubble ring ---------- 
   AFRAME.registerComponent('random-bubble-ring', {
     schema: {
@@ -206,7 +250,6 @@
       radius:       { default: 5 },
       y:            { default: 0 },
       scale:        { default: 9 },
-
       radiusJitter: { default: 1.0 },
       heightJitter: { default: 1.0 },
       depthJitter:  { default: 1.2 },
@@ -219,20 +262,16 @@
       for (let i = 0; i < data.count; i++) {
         const angle = (i / data.count) * Math.PI * 2;
 
-        // radial position
         const radialOffset = (Math.random() - 0.5) * data.radiusJitter;
         const r = data.radius + radialOffset;
         let x = Math.cos(angle) * r;
         let z = Math.sin(angle) * r;
 
-        // depth jitter
         const depthOffset = (Math.random() - 0.5) * data.depthJitter;
         z += depthOffset;
 
-        // height jitter
         const y = data.y + (Math.random() - 0.5) * data.heightJitter;
 
-        // scale jitter
         const scaleFactor = 1 - data.scaleJitter / 2 + Math.random() * data.scaleJitter;
         const finalScale = data.scale * scaleFactor;
 
@@ -257,13 +296,16 @@
 </head>
 
 <body>
+  <!-- Start button for mobile audio -->
+  <button id="startButton" onclick="initAudio()">Tap to Start AR Experience</button>
+  
   <a-scene
     embedded
     vr-mode-ui="enabled:false"
     renderer="antialias:true;colorManagement:true;toneMapping:ACESFilmic;exposure:1.9"
     arjs="sourceType: webcam; sourceWidth:640; sourceHeight:480; displayWidth: 640; displayHeight: 480; debugUIEnabled:false">
 
-    <!-- Camera with FUSE cursor so bubbles pop when passing through the center ring -->
+    <!-- Camera with FUSE cursor -->
     <a-camera>
       <a-entity
         cursor="rayOrigin: entity; fuse: true; fuseTimeout: 50"
@@ -283,16 +325,9 @@
 
     <!-- Lights -->
     <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
-
-    <a-entity position="1 2 -1"
-              light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
-
-    <a-entity position="-2 2 1"
-              light="type:directional; intensity:8; color:#E65E63"></a-entity>
-
-    <a-entity position="0.5 0.6 -0.8"
-              light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
-
+    <a-entity position="1 2 -1" light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
+    <a-entity position="-2 2 1" light="type:directional; intensity:8; color:#E65E63"></a-entity>
+    <a-entity position="0.5 0.6 -0.8" light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
     <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
 
     <!-- Floating + spinning bubble sculpture -->
@@ -302,7 +337,7 @@
       scale="1 1 1"
       animation__float="property: position.y; from:-0.8; to:0.8; dur:14000; dir:alternate; loop:true; easing:easeInOutSine">
 
-      <!-- Center bubble (also poppable when it passes through the ring) -->
+      <!-- Center bubble -->
       <a-entity gltf-model="#bubbleModel"
           force-phong
           bubble-pop="fadeDelay: 3000; fadeDuration: 6000"
