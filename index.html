@@ -119,12 +119,15 @@
   font-size: 20px;
   opacity: 0;
   margin: 6px 0;
-  transition: opacity 1s ease;
+  transform: translateY(6px);
+  transition: opacity 1.1s ease, transform 1.1s ease;
 }
 
 .riddle-line.active {
   opacity: 1;
+  transform: translateY(0);
 }
+
 
 .riddle-action {
   margin-top: 20px;
@@ -142,34 +145,36 @@
   let audioBuffer;
   let assetsLoaded = false;
   
-  // Track loading progress
   AFRAME.registerComponent('loading-handler', {
-    init: function() {
-      const scene = this.el;
-      const loadingScreen = document.getElementById('loadingScreen');
-      const startButton = document.getElementById('startButton');
-      
-      // Listen for when all assets are loaded
-      scene.addEventListener('loaded', function() {
-        console.log('Scene loaded');
-        assetsLoaded = true;
-        
-        // Hide loading screen with fade
+  init: function () {
+    const scene = this.el;
+    const loadingScreen = document.getElementById('loadingScreen');
+    const startButton = document.getElementById('startButton');
+
+    const MIN_LOADING_MS = 4000;           // minimum time overlay stays visible
+    const overlayStart = performance.now(); // when overlay began
+
+    scene.addEventListener('loaded', function () {
+      console.log('Scene loaded');
+      assetsLoaded = true;
+
+      const elapsed = performance.now() - overlayStart;
+      const remaining = Math.max(0, MIN_LOADING_MS - elapsed);
+
+      setTimeout(() => {
+        // Fade out loading screen
         if (loadingScreen) {
           loadingScreen.style.opacity = '0';
-          setTimeout(() => {
-            loadingScreen.classList.add('hidden');
-          }, 500);
+          setTimeout(() => loadingScreen.classList.add('hidden'), 500);
         }
-        
+
         // Show start button
-        if (startButton) {
-          startButton.style.display = 'block';
-        }
-      });
-    }
-  });
-  
+        if (startButton) startButton.style.display = 'block';
+      }, remaining);
+    });
+  }
+});
+
   // Initialize audio on user interaction
   function initAudio() {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -432,21 +437,34 @@
     }
   });
 
-    // -------- Riddle fade-in sequence --------
+   // -------- Riddle fade-in sequence (reliable) --------
 window.addEventListener('DOMContentLoaded', () => {
-  const lines = document.querySelectorAll('.riddle-line');
-  let index = 0;
+  const lines = Array.from(document.querySelectorAll('.riddle-line'));
+  if (!lines.length) return;
 
-  // remove "active" from the first line so it fades in too (optional)
+  // Ensure all start hidden
   lines.forEach(l => l.classList.remove('active'));
 
-  setInterval(() => {
-    if (index < lines.length) {
+  let index = 0;
+
+  // Let the browser paint initial opacity:0 first
+  setTimeout(() => {
+    const timer = setInterval(() => {
+      if (index >= lines.length) {
+        clearInterval(timer);
+        return;
+      }
+
+      // Force reflow so transition triggers
+      void lines[index].offsetWidth;
+
       lines[index].classList.add('active');
       index++;
-    }
-  }, 1800);
+    }, 1400);
+  }, 250);
 });
+
+
 
   </script>
 
@@ -462,13 +480,13 @@ window.addEventListener('DOMContentLoaded', () => {
   </div>
 
   <div id="riddleBox">
-    <div class="riddle-line active">I am light.</div>
+ <div class="riddle-line">I am light.</div>
     <div class="riddle-line">I am round.</div>
     <div class="riddle-line">I float for a moment.</div>
     <div class="riddle-line">You can see through me,</div>
     <div class="riddle-line">but you cannot keep me.</div>
-    <div class="riddle-action">Tap to break the surface</div>
-  </div>
+      <div class="riddle-action">Hold on. Sit with this for a moment.</div>
+</div>
 </div>
 
 
