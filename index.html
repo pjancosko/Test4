@@ -104,6 +104,35 @@
     .hidden {
       display: none !important;
     }
+
+    /* -------- Riddle UI -------- */
+
+#riddleBox {
+  margin-top: 40px;
+  text-align: center;
+  max-width: 85%;
+  color: white;
+  font-family: Arial, sans-serif;
+}
+
+.riddle-line {
+  font-size: 20px;
+  opacity: 0;
+  margin: 6px 0;
+  transition: opacity 1s ease;
+}
+
+.riddle-line.active {
+  opacity: 1;
+}
+
+.riddle-action {
+  margin-top: 20px;
+  font-size: 16px;
+  opacity: 0.7;
+  letter-spacing: 0.04em;
+}
+
   </style>
 
   <script>
@@ -402,20 +431,47 @@
       }
     }
   });
+
+    // -------- Riddle fade-in sequence --------
+window.addEventListener('DOMContentLoaded', () => {
+  const lines = document.querySelectorAll('.riddle-line');
+  let index = 0;
+
+  // remove "active" from the first line so it fades in too (optional)
+  lines.forEach(l => l.classList.remove('active'));
+
+  setInterval(() => {
+    if (index < lines.length) {
+      lines[index].classList.add('active');
+      index++;
+    }
+  }, 1800);
+});
+
   </script>
 
 </head>
 
 <body>
-  <!-- Loading screen -->
-  <div id="loadingScreen">
-    <div class="bubble-loader">
-      <div class="bubble"></div>
-      <div class="bubble"></div>
-      <div class="bubble"></div>
-    </div>
-    <div id="loadingText">Loading Bubble World...</div>
+<!-- Loading screen -->
+<div id="loadingScreen">
+  <div class="bubble-loader">
+    <div class="bubble"></div>
+    <div class="bubble"></div>
+    <div class="bubble"></div>
   </div>
+
+  <div id="riddleBox">
+    <div class="riddle-line active">I am light.</div>
+    <div class="riddle-line">I am round.</div>
+    <div class="riddle-line">I float for a moment.</div>
+    <div class="riddle-line">You can see through me,</div>
+    <div class="riddle-line">but you cannot keep me.</div>
+    <div class="riddle-action">Tap to break the surface</div>
+  </div>
+</div>
+
+
   
   <!-- Start button for mobile audio (hidden until loaded) -->
   <button id="startButton" onclick="initAudio()" style="display: none;">Tap to Start AR Experience</button>
