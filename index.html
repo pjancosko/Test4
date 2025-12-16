@@ -596,19 +596,34 @@
       <audio id="popSound" src="bubble-pop-06-351337.mp3" preload="auto"></audio>
     </a-assets>
 
-    <!-- ORIGINAL LIGHTING SETUP RESTORED -->
-    <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
-    
-    <a-entity position="1 2 -1"
-              light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
-    
-    <a-entity position="-2 2 1"
-              light="type:directional; intensity:8; color:#E65E63"></a-entity>
-    
-    <a-entity position="0.5 0.6 -0.8"
-              light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
-    
-    <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
+   <!-- Sculpture Light Rig (world-space, NOT camera-attached) -->
+<a-entity id="sculpture-light-rig" position="0 -0.5 -6">
+  <!-- SAME lights you like, but anchored to sculpture position -->
+  <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
+
+  <a-entity position="1 2 -1"
+            light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
+
+  <a-entity position="-2 2 1"
+            light="type:directional; intensity:8; color:#E65E63"></a-entity>
+
+  <a-entity position="0.5 0.6 -0.8"
+            light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
+
+  <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
+
+  <!-- Put the sculpture INSIDE this rig at local 0,0,0 -->
+  <a-entity
+    id="bubble-sculpture"
+    position="0 0 0"
+    scale="1 1 1"
+    animation__float="property: position.y; from:-0.8; to:0.8; dur:48000; dir:alternate; loop:true; easing:easeInOutSine">
+
+    <!-- ... your center bubble + rings stay exactly the same ... -->
+
+  </a-entity>
+</a-entity>
+
 
     <!-- Bubble sculpture with DOUBLED scale and original float timing -->
     <a-entity
