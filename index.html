@@ -9,10 +9,10 @@
   <!-- Preconnect to CDNs -->
   <link rel="preconnect" href="https://aframe.io">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
-  
+
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
-    
+
     #startButton {
       position: fixed;
       top: 50%;
@@ -29,14 +29,14 @@
       font-family: Arial, sans-serif;
       display: none;
     }
-    
+
     #loadingScreen {
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg,#FFD6A5 0%,#FFB7B2 25%,#FBC2EB 50%,#A1C4FD 75%,#C2E9FB 100%);
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -45,13 +45,16 @@
       transition: opacity 0.5s ease-out;
       will-change: opacity;
     }
-    
+#loadingScreen.ready {
+  pointer-events: none;
+}
+
     .bubble-loader {
       position: relative;
       width: 100px;
       height: 100px;
     }
-    
+
     .bubble {
       position: absolute;
       border: 2px solid rgba(255, 255, 255, 0.7);
@@ -59,7 +62,7 @@
       animation: bubble-pop 2s ease-in-out infinite;
       will-change: transform, opacity;
     }
-    
+
     .bubble:nth-child(1) {
       width: 30px;
       height: 30px;
@@ -67,7 +70,7 @@
       top: 35px;
       animation-delay: 0s;
     }
-    
+
     .bubble:nth-child(2) {
       width: 50px;
       height: 50px;
@@ -75,7 +78,7 @@
       top: 25px;
       animation-delay: 0.3s;
     }
-    
+
     .bubble:nth-child(3) {
       width: 70px;
       height: 70px;
@@ -83,50 +86,52 @@
       top: 15px;
       animation-delay: 0.6s;
     }
-    
+
     @keyframes bubble-pop {
-      0%, 100% {
-        transform: scale(0);
-        opacity: 0;
-      }
-      50% {
-        transform: scale(1);
-        opacity: 1;
-      }
-    }
-    
-    .hidden {
-      display: none !important;
+      0%, 100% { transform: scale(0); opacity: 0; }
+      50% { transform: scale(1); opacity: 1; }
     }
 
-    #riddleBox {
-      margin-top: 40px;
-      text-align: center;
-      max-width: 85%;
-      color: white;
-      font-family: Arial, sans-serif;
-    }
+    .hidden { display: none !important; }
 
-    .riddle-line {
-      font-size: 20px;
-      opacity: 0;
-      margin: 6px 0;
-      transition: opacity 1s ease;
-      will-change: opacity;
-    }
+#riddleBox {
+  margin-top: 40px;
+  text-align: center;
+  max-width: 85%;
+  color: white;
+  font-family: Arial, sans-serif;
+}
 
-    .riddle-line.active {
-      opacity: 1;
-    }
+/* Main riddle lines */
+.riddle-line {
+  font-size: 20px;
+  opacity: 0;
+  margin: 6px 0;
+  transition: opacity 1s ease;
+  will-change: opacity;
+}
 
-    .riddle-action {
-      margin-top: 20px;
-      font-size: 16px;
-      opacity: 0.7;
-      letter-spacing: 0.04em;
-    }
+.riddle-line.active {
+  opacity: 1;
+}
 
-    /* Progress indicator for progressive loading */
+/* Action / instruction lines */
+.riddle-action {
+  margin-top: 18px;        /* space above the first action line */
+  font-size: 16px;
+  opacity: 0.78;
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+}
+
+/* If there are TWO action lines stacked */
+.riddle-action + .riddle-action {
+  margin-top: 8px;         /* space between the two */
+  font-size: 12px;         /* slightly smaller */
+  opacity: 0.6;            /* softer secondary line */
+}
+
+
     #loadProgress {
       position: fixed;
       bottom: 20px;
@@ -142,35 +147,29 @@
       opacity: 0;
       transition: opacity 0.3s;
     }
-    
-    #loadProgress.visible {
-      opacity: 1;
-    }
+
+    #loadProgress.visible { opacity: 1; }
   </style>
 
-  <!-- Load A-Frame first -->
   <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
-  
-  <!-- Defer non-critical scripts -->
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@master/aframe/build/aframe-ar.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.0.0/dist/aframe-extras.loaders.min.js" defer></script>
+ <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@master/aframe/build/aframe-ar.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.0.0/dist/aframe-extras.loaders.min.js"></script>
+</script>
 
   <script>
-  // Global variables
   let audioContext = null;
   let audioBuffer = null;
   let audioPool = null;
   let assetsLoaded = false;
   let bubblesSpawned = 0;
   let totalBubbles = 0;
-  
-  // Loading handler
+
   AFRAME.registerComponent('loading-handler', {
     init: function () {
       const scene = this.el;
       const loadingScreen = document.getElementById('loadingScreen');
       const startButton = document.getElementById('startButton');
-      const MIN_LOADING_MS = 4000;  // Back to original timing
+      const MIN_LOADING_MS = 4000;
       const overlayStart = performance.now();
 
       scene.addEventListener('loaded', function () {
@@ -178,50 +177,47 @@
         const elapsed = performance.now() - overlayStart;
         const remaining = Math.max(0, MIN_LOADING_MS - elapsed);
 
-        setTimeout(() => {
-          if (loadingScreen) {
-            loadingScreen.style.opacity = '0';
-            setTimeout(() => {
-              loadingScreen.classList.add('hidden');
-              loadingScreen.remove();
-            }, 500);
-          }
-          if (startButton) startButton.style.display = 'block';
-        }, remaining);
+       setTimeout(() => {
+  if (loadingScreen) {
+    loadingScreen.classList.add('ready'); // 👈 ADD THIS LINE
+    loadingScreen.style.opacity = '0';
+    setTimeout(() => {
+      loadingScreen.classList.add('hidden');
+      loadingScreen.remove();
+    }, 500);
+  }
+  if (startButton) startButton.style.display = 'block';
+}, remaining);
+
       });
     }
   });
 
-  // Audio initialization
   function initAudio() {
     if (audioContext) return;
-    
+
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    
+
     fetch('bubble-pop-06-351337.mp3')
       .then(response => response.arrayBuffer())
       .then(data => audioContext.decodeAudioData(data))
-      .then(buffer => {
-        audioBuffer = buffer;
-      })
+      .then(buffer => { audioBuffer = buffer; })
       .catch(e => console.error('Audio error:', e));
-    
+
     audioPool = [];
-    for (let i = 0; i < 10; i++) {  // Back to 10 for reliability
+    for (let i = 0; i < 10; i++) {
       const audio = new Audio('bubble-pop-06-351337.mp3');
       audio.volume = 0.7;
       audio.load();
       audioPool.push(audio);
     }
-    
+
     const btn = document.getElementById('startButton');
     if (btn) btn.style.display = 'none';
-    
-    // Start progressive bubble spawning after audio init
+
     startProgressiveBubbleSpawning();
   }
-  
-  // Sound playback
+
   function playPopSound() {
     if (audioContext && audioBuffer) {
       const source = audioContext.createBufferSource();
@@ -240,11 +236,10 @@
     }
   }
 
-  // Original Force Phong material settings
   AFRAME.registerComponent('force-phong', {
     schema: {
-      shininess: { default: 180 },      // Original value
-      baseOpacity: { default: 0.08 }    // Original value
+      shininess: { default: 180 },
+      baseOpacity: { default: 0.08 }
     },
     init() {
       this.el.addEventListener('model-loaded', () => {
@@ -256,21 +251,19 @@
 
           const base = n.material;
           const phong = new THREE.MeshPhongMaterial({
-            color: 0x222244,           // Original darker blue
-            emissive: 0x060a2e,        // Original subtle emissive
-            specular: 0xffffff,        
+            color: 0x222244,
+            emissive: 0x060a2e,
+            specular: 0xffffff,
             shininess: this.data.shininess,
             transparent: true,
-            opacity: (typeof base.opacity === 'number')
-                       ? base.opacity
-                       : this.data.baseOpacity,
+            opacity: (typeof base.opacity === 'number') ? base.opacity : this.data.baseOpacity,
             side: THREE.DoubleSide,
             depthWrite: false
           });
 
           if (base.map) phong.map = base.map;
           if (base.normalMap) phong.normalMap = base.normalMap;
-          
+
           n.material = phong;
           n.material.needsUpdate = true;
         });
@@ -278,7 +271,6 @@
     }
   });
 
-  // Bubble pop component with original settings
   AFRAME.registerComponent('bubble-pop', {
     schema: {
       fadeDelay: { default: 0 },
@@ -288,17 +280,12 @@
     init: function () {
       this.popped = false;
       this.el.classList.add('clickable');
-      
+
       this.onInteract = this.onInteract.bind(this);
       this.el.addEventListener('click', this.onInteract);
       this.el.addEventListener('touchstart', this.onInteract);
 
-      this.splitModels = [
-        '#splitModel1',
-        '#splitModel2', 
-        '#splitModel3',
-        '#splitModel4'
-      ];
+      this.splitModels = ['#splitModel1','#splitModel2','#splitModel3','#splitModel4'];
     },
 
     onInteract: function () {
@@ -322,38 +309,28 @@
 
       el.setAttribute('visible', false);
 
-      const randomSplitModel = 
+      const randomSplitModel =
         this.splitModels[Math.floor(Math.random() * this.splitModels.length)];
 
       const split = document.createElement('a-entity');
-      
-      const startScale = {
-        x: scale.x * 0.95,
-        y: scale.y * 0.95,
-        z: scale.z * 0.95
-      };
+
+      const startScale = { x: scale.x * 0.95, y: scale.y * 0.95, z: scale.z * 0.95 };
 
       split.setAttribute('gltf-model', randomSplitModel);
       split.setAttribute('force-phong', '');
       split.setAttribute('position', pos);
       split.setAttribute('rotation', rot);
       split.setAttribute('scale', `${startScale.x} ${startScale.y} ${startScale.z}`);
-      
+
       split.setAttribute('animation__popscale',
-        `property: scale;
-         to: ${scale.x} ${scale.y} ${scale.z};
-         dur: 250;
-         easing: easeOutCubic`
+        `property: scale; to: ${scale.x} ${scale.y} ${scale.z}; dur: 250; easing: easeOutCubic`
       );
-      
+
       split.setAttribute('animation-mixer', 'loop: once; clampWhenFinished: true');
-      
+
       parent.appendChild(split);
 
-      split.addEventListener('animation-finished', 
-        () => this.startSplitFade(split), 
-        { once: true }
-      );
+      split.addEventListener('animation-finished', () => this.startSplitFade(split), { once: true });
 
       setTimeout(() => {
         if (split.parentNode) this.startSplitFade(split);
@@ -365,37 +342,25 @@
       if (!mesh) return;
 
       const materials = [];
-      
       mesh.traverse(n => {
         if (n.isMesh && n.material) {
           n.material.transparent = true;
           n.material.depthWrite = false;
-          materials.push({
-            material: n.material,
-            startOpacity: n.material.opacity || 1
-          });
+          materials.push({ material: n.material, startOpacity: n.material.opacity || 1 });
         }
       });
 
       const fadeDuration = this.data.fadeDuration;
       const startTime = performance.now();
-      
+
       const step = (now) => {
         const t = Math.min((now - startTime) / fadeDuration, 1);
-        
-        materials.forEach(entry => {
-          entry.material.opacity = entry.startOpacity * (1 - t);
-        });
-        
-        if (t < 1) {
-          requestAnimationFrame(step);
-        } else {
-          if (splitEl.parentNode) {
-            splitEl.parentNode.removeChild(splitEl);
-          }
-        }
+        materials.forEach(entry => { entry.material.opacity = entry.startOpacity * (1 - t); });
+
+        if (t < 1) requestAnimationFrame(step);
+        else if (splitEl.parentNode) splitEl.parentNode.removeChild(splitEl);
       };
-      
+
       requestAnimationFrame(step);
     },
 
@@ -405,125 +370,104 @@
     }
   });
 
-  // Progressive bubble ring spawner with doubled scale
   AFRAME.registerComponent('progressive-bubble-ring', {
     schema: {
       count: { default: 8 },
       radius: { default: 5 },
       y: { default: 0 },
-      scale: { default: 24 },  // DOUBLED from 12
+      scale: { default: 24 },
       radiusJitter: { default: 1.0 },
       heightJitter: { default: 1.0 },
       depthJitter: { default: 1.2 },
       scaleJitter: { default: 0.9 },
-      batchSize: { default: 3 },      // Spawn 3 bubbles at a time
-      batchDelay: { default: 500 }    // Delay between batches
+      batchSize: { default: 3 },
+      batchDelay: { default: 500 }
     },
 
     init() {
       const data = this.data;
       totalBubbles += data.count;
-      
-      // Create bubble configurations first
+
       this.bubbleConfigs = [];
-      
+
       for (let i = 0; i < data.count; i++) {
         const angle = (i / data.count) * Math.PI * 2;
-        
+
         const radialOffset = (Math.random() - 0.5) * data.radiusJitter;
         const r = data.radius + radialOffset;
         let x = Math.cos(angle) * r;
         let z = Math.sin(angle) * r;
-        
+
         z += (Math.random() - 0.5) * data.depthJitter;
         const y = data.y + (Math.random() - 0.5) * data.heightJitter;
-        
+
         const scaleFactor = 1 - data.scaleJitter / 2 + Math.random() * data.scaleJitter;
         const finalScale = data.scale * scaleFactor;
-        
+
         this.bubbleConfigs.push({
           position: `${x} ${y} ${z}`,
           scale: `${finalScale} ${finalScale} ${finalScale}`,
           rotation: `${(Math.random() - 0.5) * 20} ${(Math.random()*360).toFixed(1)} ${(Math.random() - 0.5) * 20}`
         });
       }
-      
-      // Start spawning bubbles progressively
+
       this.spawnBatch(0);
     },
-    
+
     spawnBatch(startIndex) {
       const data = this.data;
       const endIndex = Math.min(startIndex + data.batchSize, this.bubbleConfigs.length);
-      
+
       for (let i = startIndex; i < endIndex; i++) {
         const config = this.bubbleConfigs[i];
         const bubble = document.createElement('a-entity');
-        
+
         bubble.setAttribute('gltf-model', '#bubbleModel');
         bubble.setAttribute('force-phong', '');
         bubble.setAttribute('bubble-pop', '');
         bubble.setAttribute('position', config.position);
         bubble.setAttribute('scale', config.scale);
         bubble.setAttribute('rotation', config.rotation);
-        
+
         this.el.appendChild(bubble);
         bubblesSpawned++;
-        
-        // Update progress
+
         updateLoadProgress();
       }
-      
-      // Schedule next batch
+
       if (endIndex < this.bubbleConfigs.length) {
-        setTimeout(() => {
-          this.spawnBatch(endIndex);
-        }, data.batchDelay);
+        setTimeout(() => { this.spawnBatch(endIndex); }, data.batchDelay);
       }
     }
   });
 
-  // Update loading progress indicator
   function updateLoadProgress() {
     const progress = document.getElementById('loadProgress');
     if (!progress) return;
-    
+
     if (bubblesSpawned < totalBubbles) {
       progress.classList.add('visible');
       progress.textContent = `Loading bubbles: ${bubblesSpawned}/${totalBubbles}`;
     } else {
-      setTimeout(() => {
-        progress.classList.remove('visible');
-      }, 1000);
+      setTimeout(() => { progress.classList.remove('visible'); }, 1000);
     }
   }
 
-  // Start progressive spawning after scene loads
   function startProgressiveBubbleSpawning() {
     const progress = document.getElementById('loadProgress');
-    if (progress) {
-      setTimeout(() => {
-        progress.classList.add('visible');
-      }, 1000);
-    }
+    if (progress) setTimeout(() => { progress.classList.add('visible'); }, 1000);
   }
 
-  // Riddle sequence
   window.addEventListener('DOMContentLoaded', () => {
     const lines = document.querySelectorAll('.riddle-line');
     if (!lines.length) return;
-    
+
     lines.forEach(l => l.classList.remove('active'));
-    
     let index = 0;
-    
+
     setTimeout(() => {
       const timer = setInterval(() => {
-        if (index >= lines.length) {
-          clearInterval(timer);
-          return;
-        }
-        
+        if (index >= lines.length) { clearInterval(timer); return; }
         void lines[index].offsetWidth;
         lines[index].classList.add('active');
         index++;
@@ -534,7 +478,6 @@
 </head>
 
 <body>
-  <!-- Loading screen -->
   <div id="loadingScreen">
     <div class="bubble-loader">
       <div class="bubble"></div>
@@ -543,39 +486,37 @@
     </div>
 
     <div id="riddleBox">
-      <div class="riddle-line active">I am light.</div>
+      <div class="riddle-line">I am light.</div>
       <div class="riddle-line">I am round.</div>
       <div class="riddle-line">I float for a moment.</div>
       <div class="riddle-line">You can see through me,</div>
       <div class="riddle-line">but you cannot keep me.</div>
-      <div class="riddle-action">Hold on. Sit with this for a moment.</div>
+      <div class="riddle-action">What am I? Answer loading...</div>
+		 <div class="riddle-action">Please turn on ringer on phones.</div>
     </div>
   </div>
-  
-  <!-- Progress indicator -->
+
   <div id="loadProgress">Loading bubbles: 0/0</div>
-  
-  <!-- Start button -->
+
   <button id="startButton" onclick="initAudio()">Tap to Start AR Experience</button>
-  
+
   <a-scene
     loading-handler
     embedded
     vr-mode-ui="enabled:false"
-    renderer="logarithmicDepthBuffer:true;
-             antialias:true;
-             colorManagement:true;
-             physicallyCorrectLights:true;
-             toneMapping:ACESFilmic;
-             exposure:1.9"
-    arjs="sourceType: webcam; 
-          sourceWidth:640; 
-          sourceHeight:480; 
-          displayWidth: 640; 
-          displayHeight: 480; 
-          debugUIEnabled:false">
+    renderer="antialias:true;
+         colorManagement:true;
+         physicallyCorrectLights:true;
+         toneMapping:ACESFilmic;
+         exposure:1.9"
 
-    <!-- Camera with cursor -->
+    arjs="sourceType: webcam;
+      sourceWidth:480;
+      sourceHeight:360;
+      displayWidth:480;
+      displayHeight:360;
+      debugUIEnabled:false">
+
     <a-camera>
       <a-entity
         cursor="rayOrigin: entity; fuse: true; fuseTimeout: 50"
@@ -586,103 +527,67 @@
       </a-entity>
     </a-camera>
 
-    <!-- Assets -->
-    <a-assets timeout="60000">
+   <a-assets id="assets" timeout="60000">
       <a-asset-item id="bubbleModel" src="regularbubble.glb"></a-asset-item>
       <a-asset-item id="splitModel1" src="pop5_final.glb"></a-asset-item>
       <a-asset-item id="splitModel2" src="pop2_final.glb"></a-asset-item>
       <a-asset-item id="splitModel3" src="pop3_final.glb"></a-asset-item>
       <a-asset-item id="splitModel4" src="pop1_final.glb"></a-asset-item>
-      <audio id="popSound" src="bubble-pop-06-351337.mp3" preload="auto"></audio>
+  
     </a-assets>
 
-   <!-- Sculpture Light Rig (world-space, NOT camera-attached, NOT wrapping sculpture) -->
-<a-entity id="sculpture-light-rig" position="0 -0.5 -6">
-  <a-entity light="type:ambient; intensity:10; color:#FA7AAE"></a-entity>
+    <!-- Sculpture Light Rig (world-space) -->
+    <a-entity id="sculpture-light-rig" position="0 -0.5 -6">
+      <a-entity light="type:ambient; intensity:10; color:#FF6BB0"></a-entity>
 
-  <a-entity position="1 2 -1"
-            light="type:directional; intensity:8; color:#8BFCFC"></a-entity>
+      <a-entity position="1 2 -1"
+                light="type:directional; intensity:8; color:#1D5FB5"></a-entity>
 
-  <a-entity position="-2 2 1"
-            light="type:directional; intensity:8; color:#E65E63"></a-entity>
+      <a-entity position="-2 2 1"
+                light="type:directional; intensity:8; color:#FFEF17"></a-entity>
 
-  <a-entity position="0.5 0.6 -0.8"
-            light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
+      <a-entity position="0.5 0.6 -0.8"
+                light="type:point; intensity:10; distance:4; color:#FFFFFF"></a-entity>
 
-  <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#0088FF; intensity:2.5"></a-entity>
-</a-entity>
+      <a-entity light="type:hemisphere; color:#AAFFFF; groundColor:#FA9C16; intensity:4"></a-entity>
+    </a-entity>
 
-<!-- Bubble sculpture stays OUTSIDE (world-space) -->
-<a-entity
-  id="bubble-sculpture"
-  position="0 -0.5 -6"
-  scale="1 1 1"
-  animation__float="property: position.y; from:-0.8; to:0.8; dur:48000; dir:alternate; loop:true; easing:easeInOutSine">
+    <!-- ONLY ONE Bubble Sculpture -->
+    <a-entity
+      id="bubble-sculpture"
+      position="0 -0.5 -6"
+      scale="1 1 1"
+      animation__float="property: position.y; from:-0.8; to:0.8; dur:48000; dir:alternate; loop:true; easing:easeInOutSine">
 
-  <!-- Center bubble -->
-  <a-entity gltf-model="#bubbleModel"
-      force-phong
-      bubble-pop="fadeDelay: 0; fadeDuration: 10000"
-      position="0 0 0"
-      scale="60 60 60">
-  </a-entity>
+      <a-entity gltf-model="#bubbleModel"
+        force-phong
+        bubble-pop="fadeDelay: 0; fadeDuration: 10000"
+        position="0 0 0"
+        scale="60 60 60">
+      </a-entity>
 
-  <!-- Rings -->
-  <a-entity
-    id="ring-outer"
-    animation__spin="property: rotation.y; to:360; loop:true; dur:50000; easing:linear"
-    progressive-bubble-ring="count:10; radius:3; y:0; scale:24;
-                             radiusJitter:1.5; heightJitter:1.2; depthJitter:1.5; scaleJitter:0.8;
-                             batchSize:3; batchDelay:400">
-  </a-entity>
-
-  <a-entity
-    id="ring-upper"
-    animation__spin="property: rotation.y; to:-360; loop:true; dur:60000; easing:linear"
-    progressive-bubble-ring="count:8; radius:2.6; y:2.0; scale:24;
-                             radiusJitter:0.8; heightJitter:0.8; depthJitter:1.0; scaleJitter:0.4;
-                             batchSize:3; batchDelay:500">
-  </a-entity>
-
-  <a-entity
-    id="ring-lower"
-    animation__spin="property: rotation.y; to:360; loop:true; dur:55000; easing:linear"
-    progressive-bubble-ring="count:8; radius:2.4; y:-2.0; scale:24;
-                             radiusJitter:1.0; heightJitter:1.0; depthJitter:1.3; scaleJitter:0.6;
-                             batchSize:3; batchDelay:500">
-  </a-entity>
-
-</a-entity>
-
-
-
-   
-      <!-- Progressive loading rings with DOUBLED scale (24 from 12) -->
-      <!-- Outer ring with original count (10) -->
       <a-entity
         id="ring-outer"
         animation__spin="property: rotation.y; to:360; loop:true; dur:50000; easing:linear"
         progressive-bubble-ring="count:10; radius:3; y:0; scale:24;
-                            radiusJitter:1.5; heightJitter:1.2; depthJitter:1.5; scaleJitter:0.8;
-                            batchSize:3; batchDelay:400">
+                                 radiusJitter:1.5; heightJitter:1.2; depthJitter:1.5; scaleJitter:0.8;
+                                 batchSize:3; batchDelay:400">
       </a-entity>
 
-      <!-- Upper ring with original count (8) -->
       <a-entity
         id="ring-upper"
         animation__spin="property: rotation.y; to:-360; loop:true; dur:60000; easing:linear"
         progressive-bubble-ring="count:8; radius:2.6; y:2.0; scale:24;
-                            radiusJitter:0.8; heightJitter:0.8; depthJitter:1.0; scaleJitter:0.4;
-                            batchSize:3; batchDelay:500">
+                                 radiusJitter:0.8; heightJitter:0.8; depthJitter:1.0; scaleJitter:0.4;
+                                 batchSize:3; batchDelay:500">
       </a-entity>
 
-      <!-- Lower ring with original count (8) -->
       <a-entity
         id="ring-lower"
         animation__spin="property: rotation.y; to:360; loop:true; dur:55000; easing:linear"
         progressive-bubble-ring="count:8; radius:2.4; y:-2.0; scale:24;
-                            radiusJitter:1.0; heightJitter:1.0; depthJitter:1.3; scaleJitter:0.6;
-                            batchSize:3; batchDelay:500">
+                                 radiusJitter:1.0; heightJitter:1.0; depthJitter:1.3; scaleJitter:0.6;
+                                 batchSize:3; batchDelay:500">
       </a-entity>
 
     </a-entity>
